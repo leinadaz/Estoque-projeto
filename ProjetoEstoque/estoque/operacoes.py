@@ -165,13 +165,11 @@ def registrar_saida():
     # Exibe os resultados encontrados
     print("\nProdutos encontrados:")
     for i, produto in enumerate(resultados):
-        print(f"{i + 1} - PartNumber: {produto['partNumber']}, Nome: {
-              produto['nome']}, Modelo: {produto['modelo']}, Quantidade: {produto['quantidade']}")
+        print(f"{i + 1} - PartNumber: {produto['partNumber']}, Nome: {produto['nome']}, Modelo: {produto['modelo']}, Quantidade: {produto['quantidade']}")
 
     # Seleciona o produto desejado
     try:
-        escolha = int(
-            input("Selecione o número do produto que deseja registrar a saída: ")) - 1
+        escolha = int(input("Selecione o número do produto que deseja registrar a saída: ")) - 1
         if escolha == "cancelar":
             print("Operação de saída cancelada.")
             return
@@ -198,8 +196,7 @@ def registrar_saida():
             print("Quantidade insuficiente no estoque!")
             return
 
-        prefixo_aviao = input(
-            "Digite o prefixo do avião para o qual a peça está sendo enviada: ")
+        prefixo_aviao = input("Digite o prefixo do avião para o qual a peça está sendo enviada: ")
         if prefixo_aviao.lower() == "cancelar":
             print("Operação de saída cancelada.")
             return
@@ -212,15 +209,13 @@ def registrar_saida():
         else:
             data_hora = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
 
-
         # Atualiza a quantidade no estoque
         produto_selecionado['quantidade'] -= quantidade_saida
 
         # Se a quantidade chegar a 0, remove o produto do estoque
         if produto_selecionado['quantidade'] == 0:
             banco.estoque.remove(produto_selecionado)
-            print(f"Produto {
-                  produto_selecionado['nome']} removido do estoque por atingir quantidade 0.")
+            print(f"Produto {produto_selecionado['nome']} removido do estoque por atingir quantidade 0.")
 
         # Registra no log de saídas
         banco.saidas.append({
@@ -232,22 +227,35 @@ def registrar_saida():
             'prefixo_aviao': prefixo_aviao
         })
 
-        # Adicionando o registro na pasta do avião
-        # Cria o caminho para a pasta do avião
+        # Salvar no arquivo estoque_saidas.json (na pasta backup)
+        backup_path = "backup/estoque_saidas.json"
+        if not os.path.exists("backup"):
+            os.makedirs("backup")
+
+        if not os.path.exists(backup_path):
+            with open(backup_path, 'w') as f:
+                json.dump([], f)  # Cria um arquivo vazio se não existir
+
+        # Atualizar estoque_saidas.json com a nova saída
+        with open(backup_path, 'r+') as f:
+            dados_estoque = json.load(f)
+            dados_estoque.append({
+                'data_hora': data_hora,
+                'partNumber': produto_selecionado['partNumber'],
+                'nome': produto_selecionado['nome'],
+                'modelo': produto_selecionado['modelo'],
+                'quantidade': quantidade_saida,
+                'prefixo_aviao': prefixo_aviao
+            })
+            f.seek(0)
+            json.dump(dados_estoque, f, indent=4)
+
+        # Criar pasta do avião, se não existir
         pasta_aviao = f"backup/{prefixo_aviao}"
         if not os.path.exists(pasta_aviao):
-            os.makedirs(pasta_aviao)  # Cria a pasta caso não exista
+            os.makedirs(pasta_aviao)
 
-        # Log de saídas para o avião
-        log_saida_aviao = {
-            'data_hora': data_hora,
-            'partNumber': produto_selecionado['partNumber'],
-            'nome': produto_selecionado['nome'],
-            'modelo': produto_selecionado['modelo'],
-            'quantidade': quantidade_saida,
-            'prefixo_aviao': prefixo_aviao
-        }
-
+        # Salva no arquivo do avião
         arquivo_log_saida_aviao = f"{pasta_aviao}/saidas_{prefixo_aviao}.json"
         if not os.path.exists(arquivo_log_saida_aviao):
             with open(arquivo_log_saida_aviao, 'w') as file:
@@ -256,15 +264,23 @@ def registrar_saida():
         # Salva a saída no arquivo do avião
         with open(arquivo_log_saida_aviao, 'r+') as file:
             logs = json.load(file)
-            logs.append(log_saida_aviao)
+            logs.append({
+                'data_hora': data_hora,
+                'partNumber': produto_selecionado['partNumber'],
+                'nome': produto_selecionado['nome'],
+                'modelo': produto_selecionado['modelo'],
+                'quantidade': quantidade_saida,
+                'prefixo_aviao': prefixo_aviao
+            })
             file.seek(0)
             json.dump(logs, file, indent=4)
 
-        banco.salvar_dados()
         print("\nSaída registrada com sucesso!")
 
     except ValueError:
         print("Quantidade inválida! Tente novamente.")
+
+
 
 
 # Função para registrar o descarte de um produto
@@ -331,7 +347,7 @@ def registrar_descarte():
     # Solicita a quantidade
     try:
         quantidade = int(input("\nDigite a quantidade a ser descartada: "))
-        if quantidade.lower() == "cancelar":
+        if str(quantidade).lower() == "cancelar":
             print("Operação cancelada.")
             return
         if quantidade > produto_selecionado['quantidade']:
