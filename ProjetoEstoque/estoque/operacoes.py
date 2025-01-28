@@ -203,6 +203,15 @@ def registrar_saida():
         if prefixo_aviao.lower() == "cancelar":
             print("Operação de saída cancelada.")
             return
+        
+        # Se o usuário não inserir uma data/hora, usar a atual
+        data_hora_str = input("Digite a data e hora (ou pressione Enter para usar a atual): ")
+
+        if data_hora_str.strip():
+            data_hora = data_hora_str
+        else:
+            data_hora = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+
 
         # Atualiza a quantidade no estoque
         produto_selecionado['quantidade'] -= quantidade_saida
@@ -215,7 +224,7 @@ def registrar_saida():
 
         # Registra no log de saídas
         banco.saidas.append({
-            'data_hora': datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+            'data_hora': data_hora,
             'partNumber': produto_selecionado['partNumber'],
             'nome': produto_selecionado['nome'],
             'modelo': produto_selecionado['modelo'],
@@ -231,11 +240,12 @@ def registrar_saida():
 
         # Log de saídas para o avião
         log_saida_aviao = {
-            'data_hora': datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+            'data_hora': data_hora,
             'partNumber': produto_selecionado['partNumber'],
             'nome': produto_selecionado['nome'],
             'modelo': produto_selecionado['modelo'],
-            'quantidade': quantidade_saida
+            'quantidade': quantidade_saida,
+            'prefixo_aviao': prefixo_aviao
         }
 
         arquivo_log_saida_aviao = f"{pasta_aviao}/saidas_{prefixo_aviao}.json"
@@ -251,7 +261,7 @@ def registrar_saida():
             json.dump(logs, file, indent=4)
 
         banco.salvar_dados()
-        print("Saída registrada com sucesso!")
+        print("\nSaída registrada com sucesso!")
 
     except ValueError:
         print("Quantidade inválida! Tente novamente.")
