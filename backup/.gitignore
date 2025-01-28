@@ -1,1 +1,5 @@
-#pasta pra carregar as entradas
+#LEIA:
+
+"""Nessa pasta backup será criado os arquivos backups do sistema, cada um com sua devida divisão e lugar,
+terá arquivos json com as entradas, saídas, exclusões, avião destinatário e etc, não apague essa pasta de
+maneira alguma."""
