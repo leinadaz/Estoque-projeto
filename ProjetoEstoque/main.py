@@ -1,14 +1,12 @@
+# main.py
 import os
 from estoque import banco, operacoes
 from estoque import backup
 
-
 def main():
-    # Carregar dados do estoque, entradas, saídas e descartes
     banco.carregar_dados()
 
     while True:
-        # Menu de opções para o usuário
         print("\n=================================")
         print("Bem-Vindo ao sistema de estoque! ")
         print("=================================")
@@ -43,11 +41,10 @@ def main():
             backup.salvar_backup()
         elif escolha == '9':
             print("Saindo...")
-            backup.salvar_backup()  # Salva backup antes de sair
+            backup.salvar_backup()
             break
         else:
             print("Opção inválida. Tente novamente.")
-
 
 if __name__ == "__main__":
     main()
