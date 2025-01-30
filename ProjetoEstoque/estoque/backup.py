@@ -6,6 +6,7 @@ from estoque import banco
 
 BACKUP_DIR = 'backup/'
 
+
 def salvar_backup():
     if not os.path.exists(BACKUP_DIR):
         os.makedirs(BACKUP_DIR)

@@ -3,6 +3,7 @@ import os
 from estoque import banco, operacoes
 from estoque import backup
 
+
 def main():
     banco.carregar_dados()
 
@@ -18,10 +19,11 @@ def main():
         print("5. Editar produto")
         print("6. Buscar produto")
         print("7. Excluir produto")
-        print("8. Fazer backup")
-        print("9. Sair\n")
+        print("8. Gerar relatório")
+        print("9. Fazer backup")
+        print("10. Sair\n")
 
-        escolha = input("Escolha a opção (1-9): ")
+        escolha = input("Escolha a opção (1-10): ")
 
         if escolha == '1':
             operacoes.adicionar_produto()
@@ -38,13 +40,16 @@ def main():
         elif escolha == '7':
             operacoes.excluir_produto()
         elif escolha == '8':
-            backup.salvar_backup()
+            operacoes.executar_relatorio()  # Aqui está a correção
         elif escolha == '9':
+            backup.salvar_backup()
+        elif escolha == '10':
             print("Saindo...")
             backup.salvar_backup()
             break
         else:
             print("Opção inválida. Tente novamente.")
+
 
 if __name__ == "__main__":
     main()
