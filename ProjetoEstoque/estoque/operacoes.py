@@ -1,15 +1,20 @@
 # imports
 
-import keyboard
+from typing import Optional
 import os
-from datetime import datetime
 import json
+from functools import wraps
+import keyboard
+import sys
+from datetime import datetime
 from estoque import banco
 import pandas as pd
+import subprocess
+import logging
+from pathlib import Path
+import re
 
 # limpar tela
-
-
 def limpar_tela():
     """Função para limpar a tela do terminal."""
     sistema = os.name
@@ -21,8 +26,6 @@ def limpar_tela():
     print("Digite 'cancelar' a qualquer momento\n caso queira cancelar o processo!")
     print("=" * 37)
 
-# verificar cancelamento
-
 
 def verificar_cancelamento(func):
     def wrapper(*args, **kwargs):
@@ -33,30 +36,126 @@ def verificar_cancelamento(func):
         return result
     return wrapper
 
-# selecionar classificação
+
+def salvar_dados_seguro(func):
+    """
+    Decorador para garantir o salvamento seguro de dados com backup automático
+    e registro de erros.
+    """
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        # Criar backup antes da operação
+        try:
+            if os.path.exists('dados.json'):
+                with open('dados.json', 'r') as f:
+                    backup_data = f.read()
+
+                # Criar pasta de backup se não existir
+                if not os.path.exists('backup'):
+                    os.makedirs('backup')
+
+                # Salvar backup com timestamp
+                backup_file = f'backup/backup_{
+                    datetime.now().strftime("%Y%m%d_%H%M%S")}.json'
+                with open(backup_file, 'w') as f:
+                    f.write(backup_data)
+        except Exception as e:
+            print(f"Erro ao criar backup: {e}")
+            return None
+
+        try:
+            # Executar a função original
+            result = func(*args, **kwargs)
+
+            # Salvar dados
+            banco.salvar_dados()
+
+            return result
+
+        except Exception as e:
+            # Registrar erro em um arquivo de log
+            error_msg = f"[{datetime.now()}] Erro na função {
+                func.__name__}: {str(e)}\n"
+
+            try:
+                with open('error_log.txt', 'a') as f:
+                    f.write(error_msg)
+            except:
+                print("Não foi possível salvar o log de erro")
+
+            # Tentar restaurar backup em caso de erro
+            try:
+                if os.path.exists(backup_file):
+                    with open(backup_file, 'r') as f:
+                        backup_data = json.load(f)
+                    with open('dados.json', 'w') as f:
+                        json.dump(backup_data, f, indent=4)
+                    print("Dados restaurados do backup após erro")
+            except:
+                print("Não foi possível restaurar o backup")
+
+            print(f"Erro ao processar operação: {e}")
+            return None
+
+    return wrapper
+
+
+def limpar_backups_antigos(dias=365):
+    """Remove backups mais antigos que o número de dias especificado"""
+    try:
+        import time
+        now = time.time()
+        backup_dir = 'backup'
+
+        if os.path.exists(backup_dir):
+            for f in os.listdir(backup_dir):
+                if f.startswith('backup_') and f.endswith('.json'):
+                    f_path = os.path.join(backup_dir, f)
+                    if os.stat(f_path).st_mtime < now - (dias * 86400):
+                        os.remove(f_path)
+    except Exception as e:
+        print(f"Erro ao limpar backups antigos: {e}")
+
+
+def configurar_log():
+    """Configura log básico para rastreamento de erros"""
+    if not os.path.exists('logs'):
+        os.makedirs('logs')
+
+    logging.basicConfig(
+        filename=f'logs/sistema_{datetime.now().strftime("%Y%m")}.log',
+        level=logging.INFO,
+        format='%(asctime)s - %(levelname)s - %(message)s'
+    )
 
 
 @verificar_cancelamento
 def selecionar_classificacao():
     while True:
-        print("\nSelecione a classificação do produto:")
-        print("1. Produto Aero")
-        print("2. Produto Auto")
-        print("3. EPI")
-        opcao = input("Escolha a opção (1-3): ").strip()
+        print("\nClassificação do produto:")
+        print("1 - AERO (Aeronáutico)")
+        print("2 - AUTO (Automotivo)")
+        print("3 - EPI (Equipamento de Proteção)")
+        print("4 - CONS (Produto de Consumo)")
+        
+        opcao = input("\nDigite a opção desejada (1-4): ")
+        
+        if opcao.lower() == "cancelar":
+            return "cancelar"
+            
+        classificacoes = {
+            "1": "AERO",
+            "2": "AUTO",
+            "3": "EPI",
+            "4": "CONS"
+        }
+        
+        if opcao in classificacoes:
+            return classificacoes[opcao]
+        
+        print("Opção inválida! Por favor, tente novamente.")
 
-        if opcao == "1":
-            return "AERO"
-        elif opcao == "2":
-            return "AUTO"
-        elif opcao == "3":
-            return "EPI"
-        else:
-            print("Opção inválida! Tente novamente.")
-
-# adicionar produto
-
-
+@salvar_dados_seguro
 @verificar_cancelamento
 def adicionar_produto():
     limpar_tela()
@@ -68,6 +167,69 @@ def adicionar_produto():
     if classificacao.lower() == 'cancelar':
         return
 
+    # Verifica se quer adicionar a um produto existente primeiro
+    opcao = input("Deseja adicionar a um produto existente? (S/N): ")
+    if opcao.lower() == 'cancelar':
+        return
+
+    if opcao.lower() == 's':
+        # Busca produto existente
+        print("\nBusca de produto existente:")
+        print("1 - Buscar por Nome")
+        print("2 - Buscar por Modelo")
+        if classificacao == "AERO":
+            print("3 - Buscar por Part Number")
+
+        opcao_busca = input("\nDigite a opção desejada: ")
+        if opcao_busca.lower() == 'cancelar':
+            return
+
+        termo_busca = input("Digite o termo de busca: ")
+        if termo_busca.lower() == 'cancelar':
+            return
+
+        # Filtra os produtos
+        resultados = []
+        if opcao_busca == "1":
+            resultados = [p for p in banco.estoque if termo_busca.lower(
+            ) in p['nome'].lower() and p['classificacao'] == classificacao]
+        elif opcao_busca == "2":
+            resultados = [p for p in banco.estoque if termo_busca.lower(
+            ) in p['modelo'].lower() and p['classificacao'] == classificacao]
+        elif opcao_busca == "3" and classificacao == "AERO":
+            resultados = [p for p in banco.estoque if termo_busca.lower() in str(
+                p.get('partNumber', '')).lower()]
+
+        if resultados:
+            print("\nProdutos encontrados:")
+            for i, produto in enumerate(resultados):
+                part_number = f", PN: {produto.get(
+                    'partNumber', 'N/A')}" if classificacao == "AERO" else ""
+                print(f"{i + 1} - Nome: {produto['nome']}, Modelo: {produto['modelo']}{part_number}, "
+                      f"Condição: {produto.get('condicao', 'N/A')}, Quantidade: {produto['quantidade']}")
+
+            try:
+                escolha = int(input("\nSelecione o número do produto: ")) - 1
+                produto_existente = resultados[escolha]
+
+                quantidade = int(input("Quantidade a adicionar: "))
+                if quantidade <= 0:
+                    print("Quantidade inválida!")
+                    return
+
+                produto_existente['quantidade'] += quantidade
+                print(f"Quantidade atualizada com sucesso! Nova quantidade: {produto_existente['quantidade']}")
+                banco.salvar_dados()
+                return
+
+            except (ValueError, IndexError):
+                print("Seleção inválida!")
+                return
+        else:
+            print(
+                "Nenhum produto encontrado. Continuando com cadastro de novo produto...")
+
+    # Cadastro de novo produto
     produto = {
         'classificacao': classificacao,
         'nome': '',
@@ -77,6 +239,26 @@ def adicionar_produto():
         'origem': '',
         'data': datetime.now().strftime("%d/%m/%Y %H:%M:%S")
     }
+
+    # Campo de condição para todos os produtos exceto CONS
+    if classificacao != "CONS":
+        print("\nCondição do produto:")
+        print("1 - Novo")
+        print("2 - Usado")
+        print("3 - Revisado")
+
+        while True:
+            condicao_opcao = input("Digite a opção (1/2/3): ")
+            if condicao_opcao.lower() == 'cancelar':
+                return
+            if condicao_opcao in ['1', '2', '3']:
+                produto['condicao'] = {
+                    '1': 'Novo',
+                    '2': 'Usado',
+                    '3': 'Revisado'
+                }[condicao_opcao]
+                break
+            print("Opção inválida!")
 
     # Campos comuns para todos os tipos
     produto['nome'] = input("Nome----------> ")
@@ -106,34 +288,9 @@ def adicionar_produto():
         produto['partNumber'] = input("PartNumber----> ")
         if produto['partNumber'].lower() == 'cancelar':
             return
-        produto['serialNumber'] = input("SerialNumber--> ")
-        if produto['serialNumber'].lower() == 'cancelar':
-            return
 
-    # Verificar se o produto já existe no estoque
-    produto_existente = None
-    for p in banco.estoque:
-        match_basico = (p['nome'] == produto['nome'] and
-                        p['modelo'] == produto['modelo'] and
-                        p['classificacao'] == produto['classificacao'])
-
-        if classificacao == "AERO":
-            if match_basico and p.get('partNumber') == produto.get('partNumber'):
-                produto_existente = p
-                break
-        else:
-            if match_basico:
-                produto_existente = p
-                break
-
-    if produto_existente:
-        produto_existente['quantidade'] += produto['quantidade']
-        print(f"Quantidade do produto {
-              produto['nome']} atualizada com sucesso!")
-    else:
-        banco.estoque.append(produto)
-        print(f"Produto {produto['nome']} adicionado com sucesso!")
-
+    banco.estoque.append(produto)
+    print(f"Produto {produto['nome']} adicionado com sucesso!")
     banco.salvar_dados()
 
     # Registro do log de entrada
@@ -151,139 +308,196 @@ def adicionar_produto():
         file.seek(0)
         json.dump(logs, file, indent=4)
 
+
 # registrar saida
 
 
+@salvar_dados_seguro
 @verificar_cancelamento
 def registrar_saida():
-    limpar_tela()
-    print("===========================================================")
-    print("Saída de produto do estoque. Escolha uma opção de busca: ")
-    print("1 - Buscar por Nome")
-    print("2 - Buscar por Modelo")
-    print("===========================================================")
-
-    opcao_busca = input("Digite a opção desejada (1/2): ")
-    if opcao_busca.lower() == "cancelar":
-        return
-
-    termo_busca = input("Digite o termo de busca: ")
-    if termo_busca.lower() == "cancelar":
-        return
-
-    # Filtra os produtos com base na opção selecionada
-    resultados = []
-    if opcao_busca == "1":
-        resultados = [p for p in banco.estoque if termo_busca.lower()
-                      in p['nome'].lower()]
-    elif opcao_busca == "2":
-        resultados = [p for p in banco.estoque if termo_busca.lower()
-                      in p['modelo'].lower()]
-    else:
-        print("Opção inválida! Tente novamente.")
-        return
-
-    if not resultados:
-        print("Nenhum produto encontrado com o termo de busca informado.")
-        return
-
-    limpar_tela()
-    print("\nProdutos encontrados:")
-    for i, produto in enumerate(resultados):
-        print(f"{i + 1} - Nome: {produto['nome']}, Modelo: {produto['modelo']}, "
-              f"Quantidade: {produto['quantidade']}")
-
-    try:
-        escolha = int(
-            input("\nSelecione o número do produto que deseja registrar a saída: ")) - 1
-        produto_selecionado = resultados[escolha]
-    except (ValueError, IndexError):
-        print("Seleção inválida! Tente novamente.")
-        return
-
-    limpar_tela()
-    print("\nProduto selecionado:")
-    for chave, valor in produto_selecionado.items():
-        print(f"{chave.capitalize()}: {valor}")
-
     try:
         limpar_tela()
-        quantidade_saida = int(input("\nDigite a quantidade a ser retirada: "))
-        if quantidade_saida > produto_selecionado['quantidade']:
-            print("Quantidade insuficiente no estoque!")
+        print("\n===========================================================")
+        print("Saída de produto do estoque. Escolha uma opção de busca:")
+        print("1 - Buscar por Nome")
+        print("2 - Buscar por Modelo")
+        print("3 - Buscar por Part Number")
+        print("===========================================================")
+
+        opcao_busca = input("Digite a opção desejada (1/2/3): ")
+        if opcao_busca.lower() == "cancelar":
             return
 
-        prefixo_aviao = input("Digite o prefixo do avião: ")
-        if prefixo_aviao.lower() == "cancelar":
+        termo_busca = input("Digite o termo de busca: ")
+        if termo_busca.lower() == "cancelar":
             return
 
-        # Define a pasta de destino geral do avião
-        pasta_destino = f"backup/{prefixo_aviao}"
+        # Filtra os produtos
+        if opcao_busca == "1":
+            resultados = [p for p in banco.estoque if termo_busca.lower() in p['nome'].lower()]
+        elif opcao_busca == "2":
+            resultados = [p for p in banco.estoque if termo_busca.lower() in p['modelo'].lower()]
+        elif opcao_busca == "3":
+            resultados = [p for p in banco.estoque if termo_busca.lower() in str(p.get('partNumber', '')).lower()]
+        else:
+            print("Opção inválida! Tente novamente.")
+            return
 
-        # Prepara o registro de saída
+        if not resultados:
+            print("Nenhum produto encontrado.")
+            return
+
+        # Exibe os resultados
+        print("\nProdutos encontrados:")
+        for i, produto in enumerate(resultados):
+            part_number = f", PN: {produto.get('partNumber', 'N/A')}" if 'partNumber' in produto else ""
+            print(f"{i + 1} - Nome: {produto['nome']}, Modelo: {produto['modelo']}"
+                  f"{part_number}, Classificação: {produto['classificacao']}, "
+                  f"Condição: {produto.get('condicao', 'N/A')}, "
+                  f"Quantidade: {produto['quantidade']}")
+
+        try:
+            escolha = int(input("\nSelecione o número do produto para saída: ")) - 1
+            produto_selecionado = resultados[escolha]
+        except (ValueError, IndexError):
+            print("Seleção inválida!")
+            return
+
+        try:
+            quantidade = int(input("Quantidade para saída: "))
+            if quantidade > produto_selecionado['quantidade']:
+                print("Quantidade insuficiente em estoque!")
+                return
+            if quantidade <= 0:
+                print("Quantidade deve ser maior que zero!")
+                return
+        except ValueError:
+            print("Quantidade inválida!")
+            return
+
+        # Registra a saída com campos básicos
         saida = {
             'data_hora': datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
             'nome': produto_selecionado['nome'],
             'modelo': produto_selecionado['modelo'],
-            'quantidade': quantidade_saida,
-            'valor': produto_selecionado['valor'],
             'classificacao': produto_selecionado['classificacao'],
-            'prefixo_aviao': prefixo_aviao
+            'condicao': produto_selecionado.get('condicao', 'N/A'),
+            'quantidade': quantidade,
+            'valor': produto_selecionado.get('valor', 0),
+            'origem': produto_selecionado.get('origem', 'N/A'),
+            'partNumber': produto_selecionado.get('partNumber', 'N/A')
         }
 
-        # Adiciona campos específicos por classificação
+        # Campos específicos por classificação
         if produto_selecionado['classificacao'] == "AERO":
-            saida['partNumber'] = produto_selecionado.get('partNumber')
-            saida['serialNumber'] = produto_selecionado.get('serialNumber')
+            prefixo = input("Digite o prefixo do avião (obrigatório): ")
+            if prefixo.lower() == "cancelar":
+                return
+            if not prefixo.strip():
+                print("Para peças AERO, o prefixo do avião é obrigatório!")
+                return
+            serial_number = input("Digite o Serial Number da peça (obrigatório): ")
+            if serial_number.lower() == "cancelar":
+                return
+            if not serial_number.strip():
+                print("Para peças AERO, o Serial Number é obrigatório!")
+                return
+            saida.update({
+                'prefixo_aviao': prefixo,
+                'serialNumber': serial_number
+            })
 
-        # Atualiza a quantidade no estoque
-        produto_selecionado['quantidade'] -= quantidade_saida
+        elif produto_selecionado['classificacao'] == "AUTO":
+            prefixo = input("Digite o prefixo (obrigatório): ")
+            if prefixo.lower() == "cancelar":
+                return
+            if not prefixo.strip():
+                print("Para peças AUTO, o prefixo é obrigatório!")
+                return
+            placa = input("Digite a placa da camionete (obrigatório): ")
+            if placa.lower() == "cancelar":
+                return
+            if not placa.strip():
+                print("Para peças AUTO, a placa da camionete é obrigatória!")
+                return
+            saida.update({
+                'prefixo_aviao': prefixo,
+                'placa_camionete': placa
+            })
 
-        # Se a quantidade chegar a 0, remove o produto do estoque
+        elif produto_selecionado['classificacao'] == "EPI":
+            prefixo = input("Digite o prefixo (obrigatório): ")
+            if prefixo.lower() == "cancelar":
+                return
+            if not prefixo.strip():
+                print("Para peças EPI, o prefixo é obrigatório!")
+                return
+            nome_badeco = input("Digite o nome do badeco (obrigatório): ")
+            if nome_badeco.lower() == "cancelar":
+                return
+            if not nome_badeco.strip():
+                print("Para peças EPI, o nome do badeco é obrigatório!")
+                return
+            saida.update({
+                'prefixo_aviao': prefixo,
+                'nome_badeco': nome_badeco
+            })
+
+        elif produto_selecionado['classificacao'] == "CONS":
+            observacoes = input("Observações (opcional): ")
+            if observacoes.lower() == "cancelar":
+                return
+            saida['observacoes'] = observacoes if observacoes.strip() else 'N/A'
+
+        # Atualiza o estoque
+        produto_selecionado['quantidade'] -= quantidade
+
+        # Determina o caminho base da aplicação
+        if getattr(sys, 'frozen', False):
+            base_path = os.path.dirname(os.path.dirname(sys.executable))
+        else:
+            base_path = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+        # Garante que a pasta backup existe
+        caminho_backup = os.path.join(base_path, 'backup')
+        os.makedirs(caminho_backup, exist_ok=True)
+
+        # Define o caminho completo do arquivo de saídas
+        arquivo_saidas = os.path.join(base_path, 'backup', 'estoque_saidas.json')
+
+        # Carrega o arquivo de saídas atual
+        try:
+            with open(arquivo_saidas, 'r', encoding='utf-8') as f:
+                estoque_saidas = json.load(f)
+        except FileNotFoundError:
+            estoque_saidas = []
+        except json.JSONDecodeError:
+            estoque_saidas = []
+
+        # Adiciona a nova saída
+        estoque_saidas.append(saida)
+
+        # Salva no arquivo de saídas
+        with open(arquivo_saidas, 'w', encoding='utf-8') as f:
+            json.dump(estoque_saidas, f, ensure_ascii=False, indent=4)
+
         if produto_selecionado['quantidade'] == 0:
             banco.estoque.remove(produto_selecionado)
-            print(f"Produto {
-                  produto_selecionado['nome']} removido do estoque por atingir quantidade 0.")
+            print(f"Produto removido do estoque.")
 
+        # Salva as alterações no estoque
         banco.salvar_dados()
 
-        # Cria pasta de destino se não existir
-        if not os.path.exists(pasta_destino):
-            os.makedirs(pasta_destino)
-
-        # Salva no arquivo de log de saídas (estoque_saidas.json)
-        arquivo_log = 'backup/estoque_saidas.json'
-        if not os.path.exists(arquivo_log):
-            with open(arquivo_log, 'w') as f:
-                json.dump([], f)
-
-        with open(arquivo_log, 'r+') as f:
-            dados = json.load(f)
-            dados.append(saida)
-            f.seek(0)
-            json.dump(dados, f, indent=4)
-
-        # Salva todas as saídas dentro do saidas.json do avião
-        arquivo_aviao = f"{pasta_destino}/saidas.json"
-        if not os.path.exists(arquivo_aviao):
-            with open(arquivo_aviao, 'w') as f:
-                json.dump([], f)
-
-        with open(arquivo_aviao, 'r+') as f:
-            dados = json.load(f)
-            dados.append(saida)
-            f.seek(0)
-            json.dump(dados, f, indent=4)
-
-        limpar_tela()
-        print("\nSaída registrada com sucesso!")
-
-    except ValueError:
-        print("Quantidade inválida! Tente novamente.")
+        print("Saída registrada com sucesso!")
+        
+    except Exception as e:
+        logging.error(f"Erro ao registrar saída: {str(e)}")
+        print(f"Erro ao registrar saída: {str(e)}")
+        return None
 
 # Função para registrar o descarte de um produto
 
-
+@salvar_dados_seguro
 @verificar_cancelamento
 def registrar_descarte():
     limpar_tela()
@@ -387,45 +601,53 @@ def mostrar_estoque():
 
     if not banco.estoque:
         print("O estoque está vazio.")
-        return
+    else:
+        # Agrupa produtos por classificação
+        aero = [p for p in banco.estoque if p['classificacao'] == "AERO"]
+        auto = [p for p in banco.estoque if p['classificacao'] == "AUTO"]
+        epi = [p for p in banco.estoque if p['classificacao'] == "EPI"]
 
-    # Agrupa produtos por classificação
-    aero = [p for p in banco.estoque if p['classificacao'] == "AERO"]
-    auto = [p for p in banco.estoque if p['classificacao'] == "AUTO"]
-    epi = [p for p in banco.estoque if p['classificacao'] == "EPI"]
+        def mostrar_produto(produto):
+            print("=" * 50)
+            print(f"Nome         : {produto['nome']}")
+            print(f"Modelo       : {produto['modelo']}")
+            print(f"Quantidade   : {produto['quantidade']}")
+            print(f"Valor        : R${produto['valor']:.2f}")
 
-    def mostrar_produto(produto):
-        print("=" * 50)
-        print(f"Nome         : {produto['nome']}")
-        print(f"Modelo       : {produto['modelo']}")
-        print(f"Quantidade   : {produto['quantidade']}")
-        print(f"Valor        : R${produto['valor']:.2f}")
+            if produto['classificacao'] == "AERO":
+                print(f"PartNumber   : {produto.get('partNumber', 'N/A')}")
+                print(f"SerialNumber : {produto.get('serialNumber', 'N/A')}")
+                print(f"Prefixo Avião: {produto.get('prefixo_aviao', 'N/A')}")
+            elif produto['classificacao'] == "AUTO":
+                print(f"Placa        : {
+                      produto.get('placa_camionete', 'N/A')}")
+                print(f"Prefixo Avião: {produto.get('prefixo_aviao', 'N/A')}")
+            elif produto['classificacao'] == "EPI":
+                print(f"Funcionário  : {produto.get('nome_badeco', 'N/A')}")
+                print(f"Prefixo Avião: {produto.get('prefixo_aviao', 'N/A')}")
 
-        if produto['classificacao'] == "AERO":
-            print(f"PartNumber   : {produto.get('partNumber', 'N/A')}")
-            print(f"SerialNumber : {produto.get('serialNumber', 'N/A')}")
-            print(f"Prefixo Avião: {produto.get('prefixo_aviao', 'N/A')}")
-        elif produto['classificacao'] == "AUTO":
-            print(f"Placa        : {produto.get('placa_camionete', 'N/A')}")
-            print(f"Prefixo Avião: {produto.get('prefixo_aviao', 'N/A')}")
-        elif produto['classificacao'] == "EPI":
-            print(f"Funcionário  : {produto.get('nome_badeco', 'N/A')}")
-            print(f"Prefixo Avião: {produto.get('prefixo_aviao', 'N/A')}")
+        if aero:
+            print("\n=== PRODUTOS AERONÁUTICOS ===")
+            for produto in aero:
+                mostrar_produto(produto)
 
-    if aero:
-        print("\n=== PRODUTOS AERONÁUTICOS ===")
-        for produto in aero:
-            mostrar_produto(produto)
+        if auto:
+            print("\n=== PRODUTOS AUTOMOTIVOS ===")
+            for produto in auto:
+                mostrar_produto(produto)
 
-    if auto:
-        print("\n=== PRODUTOS AUTOMOTIVOS ===")
-        for produto in auto:
-            mostrar_produto(produto)
+        if epi:
+            print("\n=== EQUIPAMENTOS DE PROTEÇÃO INDIVIDUAL ===")
+            for produto in epi:
+                mostrar_produto(produto)
 
-    if epi:
-        print("\n=== EQUIPAMENTOS DE PROTEÇÃO INDIVIDUAL ===")
-        for produto in epi:
-            mostrar_produto(produto)
+    # Aguarda o usuário digitar "voltar" antes de retornar ao menu principal
+    while True:
+        opcao = input(
+            "\nDigite 'voltar' para retornar ao menu: ").strip().lower()
+        if opcao == "voltar":
+            break
+
 
 # função de busca de produto
 
@@ -434,15 +656,17 @@ def mostrar_estoque():
 def buscar_produto():
     limpar_tela()
     print("\nBuscar produto no estoque:")
-    print("1. Buscar por Nome")
-    print("2. Buscar por Modelo")
-    print("3. Buscar por Classificação")
-    opcao = input("Escolha uma opção (1-3): ")
+    print("1. Buscar por PartNumber (produtos aeronáuticos)")
+    print("2. Buscar por Nome")
+    print("3. Buscar por Modelo")
+    print("4. Buscar por Classificação")
+
+    opcao = input("Escolha uma opção (1-4): ").strip()
 
     if opcao.lower() == "cancelar":
         return
 
-    if opcao == "3":
+    if opcao == "4":
         classificacao = selecionar_classificacao()
         resultados = [
             p for p in banco.estoque if p['classificacao'] == classificacao]
@@ -453,25 +677,47 @@ def buscar_produto():
 
         if opcao == "1":
             resultados = [
-                p for p in banco.estoque if termo_busca.lower() in p['nome'].lower()]
+                p for p in banco.estoque
+                if p.get('partNumber') and termo_busca.lower() in p['partNumber'].lower()
+            ]
         elif opcao == "2":
             resultados = [
-                p for p in banco.estoque if termo_busca.lower() in p['modelo'].lower()]
+                p for p in banco.estoque
+                if termo_busca.lower() in p['nome'].lower()
+            ]
+        elif opcao == "3":
+            resultados = [
+                p for p in banco.estoque
+                if termo_busca.lower() in p['modelo'].lower()
+            ]
         else:
             print("Opção inválida.")
             return
 
+    limpar_tela()
     if resultados:
         print("\nProdutos encontrados:")
         for produto in resultados:
             print("\n" + "=" * 40)
-            for chave, valor in produto.items():
+            for chave, valor in sorted(produto.items()):
                 print(f"{chave.capitalize()}: {valor}")
+
+        total_produtos = len(resultados)
+        total_quantidade = sum(p['quantidade'] for p in resultados)
+        total_valor = sum(p['quantidade'] * p['valor'] for p in resultados)
+
+        print("\n=== Resumo da Busca ===")
+        print(f"Total de Produtos Encontrados: {total_produtos}")
+        print(f"Quantidade Total: {total_quantidade}")
+        print(f"Valor Total: R$ {total_valor:.2f}")
     else:
         print("Nenhum produto encontrado.")
 
+    input("\nDigite 'voltar' para retornar ao menu: ")
 # editar produto
 
+
+@salvar_dados_seguro
 @verificar_cancelamento
 def editar_produto():
     limpar_tela()
@@ -574,6 +820,8 @@ def editar_produto():
 
 # excluir produto
 
+
+@salvar_dados_seguro
 @verificar_cancelamento
 def excluir_produto():
     limpar_tela()
@@ -685,191 +933,679 @@ def excluir_produto():
         print("Nenhum produto encontrado com o termo de busca informado.")
 
 
-def gerar_relatorio_saidas(data_inicial, data_final):
+def configurar_log():
+    logging.basicConfig(filename='relatorio.log', level=logging.INFO,
+                        format='%(asctime)s - %(levelname)s - %(message)s')
+
+
+# Configura encoding do console para UTF-8
+if sys.platform.startswith('win'):
+    sys.stdout.reconfigure(encoding='utf-8')
+
+
+def criar_pasta_backup():
     """
-    Gera relatório de saídas do estoque para um período específico
+    Cria a pasta de backup se não existir, funcionando tanto em desenvolvimento quanto em exe
     """
     try:
-        with open('backup/estoque_saidas.json', 'r') as f:
-            saidas = json.load(f)
-    except FileNotFoundError:
-        print("Arquivo estoque_saidas.json não encontrado!")
+        # Determina o caminho base do aplicativo
+        if getattr(sys, 'frozen', False):
+            base_path = os.path.dirname(sys.executable)
+        else:
+            base_path = os.path.dirname(os.path.abspath(__file__))
+
+        # Cria o caminho absoluto para a pasta de backup
+        caminho_backup = os.path.join(base_path, 'backup')
+
+        # Cria a pasta se não existir
+        Path(caminho_backup).mkdir(parents=True, exist_ok=True)
+
+        # Cria o arquivo JSON se não existir
+        arquivo_saidas = os.path.join(caminho_backup, 'estoque_saidas.json')
+        if not os.path.exists(arquivo_saidas):
+            with open(arquivo_saidas, 'w', encoding='utf-8') as f:
+                json.dump([], f, ensure_ascii=False, indent=4)
+
+        return caminho_backup
+
+    except Exception as e:
+        logging.error(f"Erro ao criar pasta de backup: {str(e)}")
+        print(f"Erro ao criar pasta de backup: {str(e)}")
         return None
-    except json.JSONDecodeError:
-        print("Erro ao ler o arquivo JSON!")
-        return None
-
-    if not saidas:
-        print("Nenhum dado encontrado no arquivo de saídas")
-        return None
-
-    # Converte para DataFrame
-    df = pd.DataFrame(saidas)
-
-    # Preenche valores ausentes com 'N/A'
-    df['partNumber'] = df['partNumber'].fillna('N/A')
-    df['serialNumber'] = df['serialNumber'].fillna('N/A')
-
-    # Converte coluna de data para datetime
-    df['data_hora'] = pd.to_datetime(
-        df['data_hora'], format="%d/%m/%Y %H:%M:%S", dayfirst=True)
-
-    # Filtra pelo período especificado
-    data_inicial_dt = pd.to_datetime(
-        data_inicial, format="%d/%m/%Y", dayfirst=True)
-    data_final_dt = pd.to_datetime(
-        data_final, format="%d/%m/%Y", dayfirst=True)
-
-    mask = (df['data_hora'] >= data_inicial_dt) & (
-        df['data_hora'] <= data_final_dt)
-    df_periodo = df.loc[mask].copy()
-
-    if df_periodo.empty:
-        print("Nenhum dado encontrado para o período especificado")
-        return None
-
-    # Calcula valor total por item (quantidade * valor)
-    df_periodo['valor_total'] = df_periodo['quantidade'] * df_periodo['valor']
-
-    # Formata nome do arquivo substituindo / por -
-    nome_arquivo = f'relatorios/saidas_{data_inicial.replace("/", "-")}_{
-        data_final.replace("/", "-")}.xlsx'
-
-    # Cria o arquivo Excel
-    writer = pd.ExcelWriter(nome_arquivo, engine='xlsxwriter')
-    workbook = writer.book
-
-    # Formatos para células
-    money_fmt = workbook.add_format({'num_format': 'R$ #,##0.00'})
-    bold_fmt = workbook.add_format({'bold': True})
-
-    # Resumo geral (primeira aba)
-    # Primeiro, calcula o valor total gasto no período
-    valor_total_periodo = df_periodo['valor_total'].sum()
-
-    # Cria DataFrame para o total geral
-    total_geral = pd.DataFrame({
-        'nome': ['VALOR TOTAL DO PERÍODO'],
-        'modelo': [''],
-        'classificacao': [''],
-        'quantidade': [''],
-        'valor_total': [valor_total_periodo],
-        'partNumber': ['']
-    }, index=[0])
-
-    # Cria o resumo por item
-    resumo_geral = df_periodo.groupby(['nome', 'modelo', 'classificacao'])\
-        .agg({
-            'quantidade': 'sum',
-            'valor_total': 'sum',
-            'partNumber': 'first',
-            # Adiciona data
-            'data_hora': lambda x: x.dt.strftime("%d/%m/%Y").iloc[0]
-        }).reset_index()
-
-    # Combina o total geral com o resumo
-    resumo_final = pd.concat([total_geral, resumo_geral], ignore_index=True)
-
-    # Salva na primeira aba
-    sheet_resumo = writer.sheets['Resumo Geral'] = workbook.add_worksheet(
-        'Resumo Geral')
-    resumo_final.to_excel(
-        writer, sheet_name='Resumo Geral', index=False, startrow=0)
-
-    # Formata a primeira linha (total geral)
-    # Valor total com formato monetário
-    sheet_resumo.write(1, 4, valor_total_periodo, money_fmt)
-    # Deixa a primeira linha em negrito
-    sheet_resumo.set_row(1, None, bold_fmt)
-
-    # Relatórios por prefixo (aviões, camionetes, EPIs)
-    for prefixo in df_periodo['prefixo_aviao'].unique():
-        df_prefixo = df_periodo[df_periodo['prefixo_aviao'] == prefixo]
-
-        # Organiza as colunas relevantes
-        colunas = ['data_hora', 'nome', 'modelo', 'quantidade', 'valor',
-                   'valor_total', 'classificacao']
-
-        # Adiciona partNumber e serialNumber para itens AERO
-        if 'AERO' in df_prefixo['classificacao'].values:
-            colunas.extend(['partNumber', 'serialNumber'])
-
-        df_prefixo = df_prefixo[colunas]
-
-        # Calcula o total
-        valor_total = df_prefixo['valor_total'].sum()
-
-        # Formata a data para melhor visualização
-        df_prefixo['data_hora'] = df_prefixo['data_hora'].dt.strftime(
-            "%d/%m/%Y %H:%M:%S")
-
-        # Salva a aba
-        sheet_name = f'Prefixo_{prefixo}'
-        df_prefixo.to_excel(writer, sheet_name=sheet_name, index=False)
-
-        # Obtém o worksheet para formatação
-        worksheet = writer.sheets[sheet_name]
-
-        # Adiciona o total após os dados
-        row_pos = len(df_prefixo) + 2
-        worksheet.write(row_pos, 0, 'TOTAL', bold_fmt)
-        # Escreve o total na coluna de valor_total
-        worksheet.write(row_pos, 5, valor_total, money_fmt)
-
-    # Aplica formatação em todas as abas
-    for worksheet in writer.sheets.values():
-        worksheet.set_column('A:A', 18)  # Data/Hora
-        worksheet.set_column('B:C', 30)  # Nome e Modelo
-        worksheet.set_column('D:D', 12)  # Quantidade
-        worksheet.set_column('E:F', 15, money_fmt)  # Valores
-        worksheet.set_column('G:G', 15)  # Classificação
-        worksheet.set_column('H:I', 20)  # PartNumber e SerialNumber
-
-    writer.close()
-    return nome_arquivo
 
 
 def criar_pasta_relatorios():
     """
-    Cria a pasta de relatórios se não existir
+    Cria a pasta de relatórios se não existir, funcionando tanto em desenvolvimento quanto em exe
     """
-    if not os.path.exists('relatorios'):
-        os.makedirs('relatorios')
+    try:
+        # Determina o caminho base do aplicativo
+        if getattr(sys, 'frozen', False):
+            base_path = os.path.dirname(sys.executable)
+        else:
+            base_path = os.path.dirname(os.path.abspath(__file__))
+
+        # Cria o caminho absoluto para a pasta de relatórios
+        caminho_relatorios = os.path.join(base_path, 'relatorios')
+
+        # Cria a pasta se não existir
+        Path(caminho_relatorios).mkdir(parents=True, exist_ok=True)
+        return caminho_relatorios
+
+    except Exception as e:
+        print(f"Erro ao criar pasta de relatórios: {str(e)}")
+        return None
+
+
+def configurar_log():
+    """
+    Configura o sistema de logging
+    """
+    caminho_relatorios = criar_pasta_relatorios()
+    if caminho_relatorios:
+        arquivo_log = os.path.join(caminho_relatorios, 'log_relatorios.txt')
+        logging.basicConfig(
+            filename=arquivo_log,
+            level=logging.INFO,
+            format='%(asctime)s - %(levelname)s - %(message)s',
+            datefmt='%d/%m/%Y %H:%M:%S'
+        )
+
+
+def gerar_relatorio_saidas(data_inicial: str, data_final: str) -> str:
+    """
+    Gera relatório de saídas do estoque com tratamento de erros e validações
+    """
+    try:
+        caminho_relatorios = criar_pasta_relatorios()
+        if not caminho_relatorios:
+            print("Erro: Não foi possível criar a pasta de relatórios")
+            return None
+
+        configurar_log()
+        logging.info(f"Iniciando relatório: {data_inicial} a {data_final}")
+
+        # Determina o caminho base do aplicativo
+        if getattr(sys, 'frozen', False):
+            base_path = os.path.dirname(os.path.dirname(sys.executable))
+        else:
+            base_path = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+        backup_path = criar_pasta_backup()
+        if not backup_path:
+            logging.error("Erro ao criar pasta de backup")
+            print("Erro: Não foi possível criar a pasta de backup")
+            return None
+        
+        arquivo_saidas = os.path.join(base_path, 'backup', 'estoque_saidas.json')
+        
+        if not os.path.exists(arquivo_saidas):
+            logging.error(f"Arquivo não encontrado: {arquivo_saidas}")
+            print(f"Erro: Arquivo de saídas não encontrado em {arquivo_saidas}")
+            return None
+
+        try:
+            with open(arquivo_saidas, 'r', encoding='utf-8') as f:
+                conteudo = f.read()
+                if not conteudo.strip():
+                    logging.error("Arquivo de saídas está vazio")
+                    print("Erro: Arquivo de saídas está vazio")
+                    return None
+                
+                saidas = json.loads(conteudo)
+                
+                if not isinstance(saidas, list):
+                    logging.error("Formato de dados inválido - esperado uma lista de saídas")
+                    print("Erro: Formato de dados inválido no arquivo de saídas")
+                    return None
+                
+                if not saidas:
+                    logging.warning("Nenhum dado encontrado no arquivo")
+                    print("Nenhum dado encontrado no arquivo de saídas")
+                    return None
+                
+        except json.JSONDecodeError as e:
+            logging.error(f"Erro ao decodificar JSON: {str(e)}")
+            print(f"Erro: Arquivo de saídas contém JSON inválido - {str(e)}")
+            return None
+        except Exception as e:
+            logging.error(f"Erro ao ler arquivo de saídas: {str(e)}")
+            print(f"Erro ao ler arquivo de saídas: {str(e)}")
+            return None
+
+        # Converter para DataFrame e garantir tipos corretos
+        df = pd.DataFrame(saidas)
+
+        colunas_necessarias = {
+            'nome': 'Nome',
+            'modelo': 'Modelo',
+            'partNumber': 'Part Number',
+            'serialNumber': 'Serial Number',
+            'prefixo_aviao': 'Prefixo',
+            'nome_badeco': 'Badeco EPI',
+            'data_hora': 'Data/Hora',
+            'quantidade': 'Quantidade',
+            'valor': 'Valor Unit.',
+            'classificacao': 'Classificação',
+            'placa_camionete': 'Placa',
+            'condicao': 'Condição',
+            'origem': 'Origem'
+        }
+
+        # Adicionar colunas faltantes e garantir que são strings
+        for col_original, col_novo in colunas_necessarias.items():
+            if col_original not in df.columns:
+                df[col_original] = '-'
+            if col_original not in ['quantidade', 'valor', 'data_hora']:
+                df[col_original] = df[col_original].fillna('-').astype(str)
+
+        df = df.rename(columns=colunas_necessarias)
+
+        # Converter colunas numéricas
+        df['Quantidade'] = pd.to_numeric(df['Quantidade'], errors='coerce').fillna(0).astype(float)
+        df['Valor Unit.'] = pd.to_numeric(df['Valor Unit.'], errors='coerce').fillna(0).astype(float)
+        
+        try:
+            data_inicial_dt = datetime.strptime(data_inicial, "%d/%m/%Y")
+            data_final_dt = datetime.strptime(data_final, "%d/%m/%Y")
+            
+            data_inicial_dt = data_inicial_dt.replace(hour=0, minute=0, second=0)
+            data_final_dt = data_final_dt.replace(hour=23, minute=59, second=59)
+            
+            df['Data/Hora'] = pd.to_datetime(df['Data/Hora'], format="%d/%m/%Y %H:%M:%S", dayfirst=True)
+            
+        except ValueError as e:
+            logging.error(f"Erro no processamento de datas: {str(e)}")
+            print("Erro: Formato de data inválido!")
+            return None
+
+        mask = (df['Data/Hora'] >= data_inicial_dt) & (df['Data/Hora'] <= data_final_dt)
+        df_periodo = df.loc[mask].copy()
+
+        if df_periodo.empty:
+            logging.warning("Nenhum dado encontrado no período especificado")
+            print("Nenhum dado encontrado para o período especificado")
+            return None
+
+        df_periodo['Valor Total'] = df_periodo['Quantidade'] * df_periodo['Valor Unit.']
+        df_periodo['Valor Total'] = df_periodo['Valor Total'].fillna(0).astype(float)
+        
+        # Ordenar por data/hora
+        df_periodo = df_periodo.sort_values('Data/Hora')
+
+        nome_arquivo = f'Relatorio_{data_inicial.replace("/", "")}_{data_final.replace("/", "")}.xlsx'
+        caminho_completo = os.path.join(caminho_relatorios, nome_arquivo)
+
+        try:
+            writer = pd.ExcelWriter(caminho_completo, engine='xlsxwriter')
+            workbook = writer.book
+            workbook.nan_inf_to_errors = True
+
+            formatos = {
+                'money': workbook.add_format({
+                    'num_format': 'R$ #,##0.00',
+                    'border': 1,
+                    'align': 'right'
+                }),
+                'header': workbook.add_format({
+                    'bold': True,
+                    'align': 'center',
+                    'bg_color': '#D3D3D3',
+                    'border': 1,
+                    'text_wrap': True,
+                    'valign': 'vcenter'
+                }),
+                'data': workbook.add_format({
+                    'border': 1,
+                    'align': 'left',
+                    'valign': 'vcenter'
+                }),
+                'number': workbook.add_format({
+                    'border': 1,
+                    'align': 'right'
+                }),
+                'date': workbook.add_format({
+                    'border': 1,
+                    'align': 'center',
+                    'num_format': 'dd/mm/yyyy hh:mm:ss'
+                }),
+                'total': workbook.add_format({
+                    'bold': True,
+                    'num_format': 'R$ #,##0.00',
+                    'bg_color': '#E6E6E6',
+                    'border': 1,
+                    'align': 'right'
+                })
+            }
+
+            # Criar aba de resumo geral
+            sheet_resumo = workbook.add_worksheet('Resumo Geral')
+
+            larguras_colunas = {
+                'A:A': 20,  # Data/Hora
+                'B:B': 15,  # Classificação
+                'C:C': 20,  # Nome
+                'D:D': 20,  # Modelo
+                'E:E': 10,  # Quantidade
+                'F:F': 15,  # Valor Total
+                'G:G': 20,  # Part Number
+                'H:H': 20,  # Serial Number
+                'I:I': 15,  # Prefixo
+                'J:J': 15,  # Condição
+                'K:K': 20,  # Origem
+            }
+
+            for col, width in larguras_colunas.items():
+                sheet_resumo.set_column(col, width)
+
+            sheet_resumo.merge_range(
+                'A1:K1',
+                f'RESUMO DE SAÍDAS - {data_inicial} a {data_final}',
+                formatos['header']
+            )
+
+            headers = ['Data/Hora', 'Classificação', 'Nome', 'Modelo', 'Quantidade', 'Valor Total',
+                      'Part Number', 'Serial Number', 'Prefixo', 'Condição', 'Origem']
+            for idx, header in enumerate(headers):
+                sheet_resumo.write(2, idx, header, formatos['header'])
+
+            row = 3
+            for _, item in df_periodo.iterrows():
+                sheet_resumo.write(row, 0, item['Data/Hora'], formatos['date'])
+                sheet_resumo.write(row, 1, str(item['Classificação']), formatos['data'])
+                sheet_resumo.write(row, 2, str(item['Nome']), formatos['data'])
+                sheet_resumo.write(row, 3, str(item['Modelo']), formatos['data'])
+                sheet_resumo.write(row, 4, float(item['Quantidade']), formatos['number'])
+                sheet_resumo.write(row, 5, float(item['Valor Total']), formatos['money'])
+                sheet_resumo.write(row, 6, str(item['Part Number']), formatos['data'])
+                sheet_resumo.write(row, 7, str(item['Serial Number']), formatos['data'])
+                sheet_resumo.write(row, 8, str(item['Prefixo']), formatos['data'])
+                sheet_resumo.write(row, 9, str(item['Condição']), formatos['data'])
+                sheet_resumo.write(row, 10, str(item['Origem']), formatos['data'])
+                row += 1
+
+            sheet_resumo.write(row, 0, 'TOTAL', formatos['header'])
+            sheet_resumo.write(row, 4, float(df_periodo['Quantidade'].sum()), formatos['number'])
+            sheet_resumo.write(row, 5, float(df_periodo['Valor Total'].sum()), formatos['money'])
+
+            # Criar abas por prefixo
+            for prefixo in sorted(df_periodo['Prefixo'].unique()):
+                if pd.notna(prefixo) and prefixo != '-':
+                    df_prefixo = df_periodo[df_periodo['Prefixo'] == prefixo].copy()
+                    
+                    sheet_name = re.sub(r'[\\/*?:\[\]]', '-', str(prefixo))[:31]
+                    sheet = workbook.add_worksheet(sheet_name)
+
+                    larguras_prefixo = {
+                        'A:A': 20,  # Data/Hora
+                        'B:B': 20,  # Nome
+                        'C:C': 20,  # Modelo
+                        'D:D': 20,  # Part Number
+                        'E:E': 20,  # Serial Number
+                        'F:F': 15,  # Classificação
+                        'G:G': 15,  # Condição
+                        'H:H': 20,  # Origem
+                        'I:I': 20,  # Badeco EPI
+                        'J:J': 15,  # Placa
+                        'K:K': 10,  # Quantidade
+                        'L:L': 15,  # Valor Unit.
+                        'M:M': 15,  # Valor Total
+                    }
+
+                    for col, width in larguras_prefixo.items():
+                        sheet.set_column(col, width)
+
+                    sheet.merge_range(
+                        'A1:M1',
+                        f'SAÍDAS {prefixo} - {data_inicial} a {data_final}',
+                        formatos['header']
+                    )
+
+                    colunas_ordenadas = [
+                        'Data/Hora', 'Nome', 'Modelo', 'Part Number', 'Serial Number',
+                        'Classificação', 'Condição', 'Origem', 'Badeco EPI', 'Placa',
+                        'Quantidade', 'Valor Unit.', 'Valor Total'
+                    ]
+
+                    for idx, col in enumerate(colunas_ordenadas):
+                        sheet.write(2, idx, col, formatos['header'])
+
+                    for row, item in enumerate(df_prefixo[colunas_ordenadas].values, start=3):
+                        for col, value in enumerate(item):
+                            if pd.isna(value):
+                                value = '-'
+
+                            if colunas_ordenadas[col] == 'Data/Hora':
+                                sheet.write(row, col, value, formatos['date'])
+                            elif colunas_ordenadas[col] in ['Valor Unit.', 'Valor Total']:
+                                sheet.write(row, col, float(value), formatos['money'])
+                            elif colunas_ordenadas[col] == 'Quantidade':
+                                sheet.write(row, col, float(value), formatos['number'])
+                            else:
+                                sheet.write(row, col, str(value), formatos['data'])
+
+                    ultima_linha = len(df_prefixo) + 3
+                    sheet.write(ultima_linha, 0, 'TOTAL', formatos['header'])
+                    sheet.write(ultima_linha, 10, float(df_prefixo['Quantidade'].sum()), formatos['number'])
+                    sheet.write(ultima_linha, 12, float(df_prefixo['Valor Total'].sum()), formatos['total'])
+
+            # Criar aba para itens de consumo (CONS)
+            df_consumo = df_periodo[df_periodo['Classificação'] == 'CONS'].copy()
+            if not df_consumo.empty:
+                sheet_consumo = workbook.add_worksheet('Consumo')
+                
+                larguras_consumo = {
+                    'A:A': 20,  # Data/Hora
+                    'B:B': 20,  # Nome
+                    'C:C': 20,  # Modelo
+                    'D:D': 20,  # Part Number
+                    'E:E': 15,  # Classificação
+                    'F:F': 15,  # Condição
+                    'G:G': 20,  # Origem
+                    'H:H': 20,  # Badeco EPI
+                    'I:I': 10,  # Quantidade
+                    'J:J': 15,  # Valor Unit.
+                    'K:K': 15,  # Valor Total
+                    }
+
+                for col, width in larguras_consumo.items():
+                    sheet_consumo.set_column(col, width)
+
+                sheet_consumo.merge_range(
+                    'A1:K1',
+                    f'ITENS DE CONSUMO - {data_inicial} a {data_final}',
+                    formatos['header']
+                )
+
+                colunas_consumo = [
+                    'Data/Hora', 'Nome', 'Modelo', 'Part Number', 'Classificação',
+                    'Condição', 'Origem', 'Badeco EPI', 'Quantidade', 'Valor Unit.',
+                    'Valor Total'
+                ]
+
+                for idx, col in enumerate(colunas_consumo):
+                    sheet_consumo.write(2, idx, col, formatos['header'])
+
+                for row, item in enumerate(df_consumo[colunas_consumo].values, start=3):
+                    for col, value in enumerate(item):
+                        if pd.isna(value):
+                            value = '-'
+
+                        if colunas_consumo[col] == 'Data/Hora':
+                            sheet_consumo.write(row, col, value, formatos['date'])
+                        elif colunas_consumo[col] in ['Valor Unit.', 'Valor Total']:
+                            sheet_consumo.write(row, col, float(value), formatos['money'])
+                        elif colunas_consumo[col] == 'Quantidade':
+                            sheet_consumo.write(row, col, float(value), formatos['number'])
+                        else:
+                            sheet_consumo.write(row, col, str(value), formatos['data'])
+
+                ultima_linha = len(df_consumo) + 3
+                sheet_consumo.write(ultima_linha, 0, 'TOTAL', formatos['header'])
+                sheet_consumo.write(ultima_linha, 8, float(df_consumo['Quantidade'].sum()), formatos['number'])
+                sheet_consumo.write(ultima_linha, 10, float(df_consumo['Valor Total'].sum()), formatos['total'])
+
+            # Criar aba de resumo para compras
+            sheet_compras = workbook.add_worksheet('Resumo Compras')
+            
+            larguras_compras = {
+                'A:A': 25,  # Nome
+                'B:B': 20,  # Modelo
+                'C:C': 20,  # Part Number
+                'D:D': 15,  # Quantidade Total
+                'E:E': 20,  # Valor Total
+                'F:F': 25,  # Último Fornecedor
+            }
+
+            for col, width in larguras_compras.items():
+                sheet_compras.set_column(col, width)
+
+            sheet_compras.merge_range(
+                'A1:F1',
+                f'RESUMO PARA COMPRAS - {data_inicial} a {data_final}',
+                formatos['header']
+            )
+
+            headers_compras = ['Nome', 'Modelo', 'Part Number', 'Quantidade Total', 
+                             'Valor Total', 'Último Fornecedor']
+            
+            for idx, header in enumerate(headers_compras):
+                sheet_compras.write(2, idx, header, formatos['header'])
+
+            # Agrupar itens para resumo de compras
+            df_compras = df_periodo.groupby(['Nome', 'Modelo', 'Part Number', 'Origem']).agg({
+                'Quantidade': 'sum',
+                'Valor Total': 'sum'
+            }).reset_index()
+
+            # Ordenar por nome
+            df_compras = df_compras.sort_values('Nome')
+
+            for row, item in enumerate(df_compras.iterrows(), start=3):
+                item = item[1]  # Pegar os dados do item
+                sheet_compras.write(row, 0, str(item['Nome']), formatos['data'])
+                sheet_compras.write(row, 1, str(item['Modelo']), formatos['data'])
+                sheet_compras.write(row, 2, str(item['Part Number']), formatos['data'])
+                sheet_compras.write(row, 3, float(item['Quantidade']), formatos['number'])
+                sheet_compras.write(row, 4, float(item['Valor Total']), formatos['money'])
+                sheet_compras.write(row, 5, str(item['Origem']), formatos['data'])
+
+            # Adicionar totais na página de compras
+            ultima_linha = len(df_compras) + 3
+            sheet_compras.write(ultima_linha, 0, 'TOTAL', formatos['header'])
+            sheet_compras.write(ultima_linha, 3, float(df_compras['Quantidade'].sum()), formatos['number'])
+            sheet_compras.write(ultima_linha, 4, float(df_compras['Valor Total'].sum()), formatos['total'])
+
+            writer.close()
+            logging.info(f"Relatório gerado com sucesso: {caminho_completo}")
+            print(f"\nRelatório gerado com sucesso!")
+            print(f"Caminho: {caminho_completo}")
+            return caminho_completo
+
+        except Exception as e:
+            logging.error(f"Erro ao gerar Excel: {str(e)}")
+            print(f"Erro ao gerar arquivo Excel: {str(e)}")
+            return None
+
+    except Exception as e:
+        logging.error(f"Erro inesperado: {str(e)}")
+        print(f"Erro inesperado: {str(e)}")
+        return None
 
 
 def executar_relatorio():
     """
-    Função principal para executar a geração de relatórios
+    Função principal para execução do relatório
     """
-    limpar_tela()
-    print("=== Geração de Relatórios de Saídas ===")
-
     while True:
         try:
-            data_inicial = input("Digite a data inicial (DD/MM/AAAA): ")
-            data_final = input("Digite a data final (DD/MM/AAAA): ")
+            print("\n=== Geração de Relatórios de Saídas ===")
 
-            if data_inicial.lower() == "cancelar" or data_final.lower() == "cancelar":
+            data_inicial = input("Data inicial (DD/MM/AAAA ou 'cancelar'): ")
+            if data_inicial.lower() == 'cancelar':
                 return
 
-            # Valida o formato das datas
-            datetime.strptime(data_inicial, "%d/%m/%Y")
-            datetime.strptime(data_final, "%d/%m/%Y")
+            data_final = input("Data final (DD/MM/AAAA ou 'cancelar'): ")
+            if data_final.lower() == 'cancelar':
+                return
 
-            # Cria a pasta antes de gerar o relatório
-            criar_pasta_relatorios()
+            # Valida formato das datas
+            try:
+                datetime.strptime(data_inicial, "%d/%m/%Y")
+                datetime.strptime(data_final, "%d/%m/%Y")
+            except ValueError:
+                print("Erro: Use o formato DD/MM/AAAA!")
+                continue
 
-            caminho_relatorio = gerar_relatorio_saidas(
-                data_inicial, data_final)
+            # Verifica se a pasta de relatórios existe/pode ser criada
+            if not criar_pasta_relatorios():
+                print("Erro: Não foi possível criar/acessar a pasta de relatórios")
+                return
 
-            if caminho_relatorio:
-                print(f"\nRelatório gerado com sucesso! Arquivo salvo em: {
-                      caminho_relatorio}")
-            else:
-                print("\nNenhum dado encontrado para o período especificado.")
+            caminho = gerar_relatorio_saidas(data_inicial, data_final)
 
+            if caminho:
+                print(f"\nRelatório gerado com sucesso em: {caminho}")
+                print("Deseja abrir a pasta de relatórios? (s/n): ")
+                if input().lower() == 's':
+                    abrir_pasta_relatorios()
+                return
+
+            retry = input("\nDeseja tentar novamente? (s/n): ")
+            if retry.lower() != 's':
+                break
+
+        except Exception as e:
+            print(f"\nErro inesperado: {str(e)}")
             break
 
+
+def abrir_pasta_relatorios():
+    """
+    Abre a pasta de relatórios no explorador de arquivos do sistema
+    """
+    try:
+        # Cria/obtém o caminho da pasta de relatórios
+        caminho_relatorios = criar_pasta_relatorios()
+        if not caminho_relatorios:
+            return False
+
+        try:
+            # Tenta abrir a pasta de acordo com o sistema operacional
+            if os.name == 'nt':  # Windows
+                os.startfile(os.path.normpath(caminho_relatorios))
+            elif sys.platform == 'darwin':  # macOS
+                subprocess.Popen(['open', caminho_relatorios])
+            else:  # linux/unix
+                subprocess.Popen(['xdg-open', caminho_relatorios])
+
+            print(f"Pasta de relatórios aberta: {caminho_relatorios}")
+            return True
+
+        except Exception as e:
+            print(f"Não foi possível abrir a pasta automaticamente.")
+            print(f"Você pode acessar a pasta manualmente em: {
+                  caminho_relatorios}")
+            print(f"Erro: {str(e)}")
+            return False
+
+    except Exception as e:
+        print(f"Erro ao acessar a pasta de relatórios: {str(e)}")
+        return False
+
+
+if __name__ == "__main__":
+    executar_relatorio()
+
+
+@verificar_cancelamento
+def buscar_saida_por_pn():
+    """
+    Busca saídas de peças por Part Number ou Prefixo de Aeronave a partir de uma data inicial
+    """
+    limpar_tela()
+    print("\n=== Busca de Saídas ===")
+    print("1. Buscar por Part Number")
+    print("2. Buscar por Prefixo de Aeronave")
+
+    opcao = input("Escolha uma opção (1-2): ").strip()
+    if opcao.lower() == 'cancelar':
+        return
+
+    try:
+        data_inicial = input(
+            "A partir de qual data deseja buscar (DD/MM/AAAA): ")
+        if data_inicial.lower() == 'cancelar':
+            return
+
+        try:
+            with open('backup/estoque_saidas.json', 'r') as f:
+                saidas = json.load(f)
+        except FileNotFoundError:
+            print("Arquivo de saídas não encontrado!")
+            input("\nPressione Enter para continuar...")
+            return
+
+        try:
+            data_inicial_dt = datetime.strptime(data_inicial, "%d/%m/%Y")
         except ValueError:
             print("Formato de data inválido! Use DD/MM/AAAA")
-            continue
+            input("\nPressione Enter para continuar...")
+            return
+
+        # Filtra saídas com base na opção escolhida
+        if opcao == '1':
+            termo_busca = input("Digite o Part Number: ").strip()
+            if termo_busca.lower() == 'cancelar':
+                return
+
+            saidas_filtradas = [
+                saida for saida in saidas
+                if saida.get('partNumber') and saida['partNumber'].lower() == termo_busca.lower()
+                and datetime.strptime(saida['data_hora'], "%d/%m/%Y %H:%M:%S") >= data_inicial_dt
+            ]
+            filtro_texto = f"PN {termo_busca}"
+
+        elif opcao == '2':
+            termo_busca = input("Digite o Prefixo da Aeronave: ").strip()
+            if termo_busca.lower() == 'cancelar':
+                return
+
+            saidas_filtradas = [
+                saida for saida in saidas
+                if saida.get('prefixo_aviao') and saida['prefixo_aviao'].lower() == termo_busca.lower()
+                and datetime.strptime(saida['data_hora'], "%d/%m/%Y %H:%M:%S") >= data_inicial_dt
+            ]
+            filtro_texto = f"Prefixo {termo_busca}"
+        else:
+            print("Opção inválida!")
+            input("\nPressione Enter para continuar...")
+            return
+
+        limpar_tela()
+
+        if not saidas_filtradas:
+            print(f"Nenhuma saída encontrada para {
+                  filtro_texto} a partir de {data_inicial}")
+            input("\nPressione Enter para continuar...")
+            return
+
+        # Imprime resultados
+        print(f"\n=== Saídas de {filtro_texto} ===")
+        print("=" * 50)
+
+        for saida in saidas_filtradas:
+            print(f"Data/Hora: {saida['data_hora']}")
+            print(f"Nome: {saida['nome']}")
+            print(f"Modelo: {saida['modelo']}")
+            print(f"Part Number: {saida.get('partNumber', 'N/A')}")
+            print(f"Serial Number: {saida.get('serialNumber', 'N/A')}")
+            print(f"Quantidade: {saida['quantidade']}")
+            print(f"Valor Unitário: R$ {saida['valor']:.2f}")
+            print(f"Prefixo Avião: {saida.get('prefixo_aviao', 'N/A')}")
+            print("=" * 50)
+
+        # Estatísticas
+        total_saidas = len(saidas_filtradas)
+        total_quantidade = sum(saida['quantidade']
+                               for saida in saidas_filtradas)
+        total_valor = sum(saida['quantidade'] * saida['valor']
+                          for saida in saidas_filtradas)
+
+        # Coleta de Part Numbers únicos
+        pns_unicos = sorted(set(saida.get('partNumber', 'N/A')
+                            for saida in saidas_filtradas if saida.get('partNumber')))
+
+        print("\n=== Resumo ===")
+        print(f"Total de Saídas: {total_saidas}")
+        print(f"Quantidade Total: {total_quantidade}")
+        print(f"Valor Total: R$ {total_valor:.2f}")
+        print(f"Part Numbers Utilizados: {', '.join(pns_unicos)}")
+
+        input("\nPressione Enter para continuar...")
+
+    except Exception as e:
+        print(f"Erro inesperado: {e}")
+        input("\nPressione Enter para continuar...")
+        print(f"Erro inesperado: {e}")
+        input("\nPressione Enter para continuar...")
