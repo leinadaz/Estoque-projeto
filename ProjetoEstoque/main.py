@@ -46,7 +46,7 @@ def main():
                 8: operacoes.excluir_produto,
                 9: operacoes.executar_relatorio,
                 10: operacoes.abrir_pasta_relatorios,
-                11: lambda: (print("Encerrando sistema."), backup.salvar_backup(), exit())
+                11: lambda: (print("Encerrando sistema..."), backup.salvar_backup(), exit())
             }
 
             if escolha in acoes:
