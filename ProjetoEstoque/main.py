@@ -52,7 +52,7 @@ def main():
             if escolha in acoes:
                 acoes[escolha]()
             else:
-                print("Opção inválida. Por favor, tente novamente inserindo um número válido...")
+                print("Opção inválida. Por favor, tente novamente inserindo um número válido.")
 
         except ValueError:
             print("Entrada inválida. Digite um número de 1 a 11.")
