@@ -285,9 +285,13 @@ def adicionar_produto():
 
     # Campos específicos por classificação
     if classificacao == "AERO":
-        produto['partNumber'] = input("PartNumber----> ")
-        if produto['partNumber'].lower() == 'cancelar':
-            return
+        produto['partNumber'] = input("PartNumber (opcional, pressione Enter para pular): ")
+    if produto['partNumber'].lower() == 'cancelar':
+        return
+    
+    # Se não for preenchido, define como traço
+    if not produto['partNumber'].strip():
+        produto['partNumber'] = '-'
 
     banco.estoque.append(produto)
     print(f"Produto {produto['nome']} adicionado com sucesso!")
@@ -385,7 +389,8 @@ def registrar_saida():
             'quantidade': quantidade,
             'valor': produto_selecionado.get('valor', 0),
             'origem': produto_selecionado.get('origem', 'N/A'),
-            'partNumber': produto_selecionado.get('partNumber', 'N/A')
+            'partNumber': produto_selecionado.get('partNumber', 'N/A'),
+            'observacoes': 'N/A'  # Adicionando campo de observações por padrão
         }
 
         # Campos específicos por classificação
@@ -396,15 +401,21 @@ def registrar_saida():
             if not prefixo.strip():
                 print("Para peças AERO, o prefixo do avião é obrigatório!")
                 return
-            serial_number = input("Digite o Serial Number da peça (obrigatório): ")
+            
+            # Serial Number agora é opcional
+            serial_number = input("Digite o Serial Number da peça (opcional): ")
             if serial_number.lower() == "cancelar":
                 return
-            if not serial_number.strip():
-                print("Para peças AERO, o Serial Number é obrigatório!")
+            
+            # Adiciona observação após o Serial Number
+            observacoes = input("Observações (opcional): ")
+            if observacoes.lower() == "cancelar":
                 return
+
             saida.update({
                 'prefixo_aviao': prefixo,
-                'serialNumber': serial_number
+                'serialNumber': serial_number if serial_number.strip() else 'N/A',
+                'observacoes': observacoes if observacoes.strip() else 'N/A'
             })
 
         elif produto_selecionado['classificacao'] == "AUTO":
@@ -420,9 +431,16 @@ def registrar_saida():
             if not placa.strip():
                 print("Para peças AUTO, a placa da camionete é obrigatória!")
                 return
+            
+            # Adiciona observação para AUTO
+            observacoes = input("Observações (opcional): ")
+            if observacoes.lower() == "cancelar":
+                return
+
             saida.update({
                 'prefixo_aviao': prefixo,
-                'placa_camionete': placa
+                'placa_camionete': placa,
+                'observacoes': observacoes if observacoes.strip() else 'N/A'
             })
 
         elif produto_selecionado['classificacao'] == "EPI":
@@ -438,9 +456,16 @@ def registrar_saida():
             if not nome_badeco.strip():
                 print("Para peças EPI, o nome do badeco é obrigatório!")
                 return
+            
+            # Adiciona observação para EPI
+            observacoes = input("Observações (opcional): ")
+            if observacoes.lower() == "cancelar":
+                return
+
             saida.update({
                 'prefixo_aviao': prefixo,
-                'nome_badeco': nome_badeco
+                'nome_badeco': nome_badeco,
+                'observacoes': observacoes if observacoes.strip() else 'N/A'
             })
 
         elif produto_selecionado['classificacao'] == "CONS":
@@ -1011,7 +1036,6 @@ def configurar_log():
             datefmt='%d/%m/%Y %H:%M:%S'
         )
 
-
 def gerar_relatorio_saidas(data_inicial: str, data_final: str) -> str:
     """
     Gera relatório de saídas do estoque com tratamento de erros e validações
@@ -1025,7 +1049,6 @@ def gerar_relatorio_saidas(data_inicial: str, data_final: str) -> str:
         configurar_log()
         logging.info(f"Iniciando relatório: {data_inicial} a {data_final}")
 
-        # Determina o caminho base do aplicativo
         if getattr(sys, 'frozen', False):
             base_path = os.path.dirname(os.path.dirname(sys.executable))
         else:
@@ -1073,7 +1096,6 @@ def gerar_relatorio_saidas(data_inicial: str, data_final: str) -> str:
             print(f"Erro ao ler arquivo de saídas: {str(e)}")
             return None
 
-        # Converter para DataFrame e garantir tipos corretos
         df = pd.DataFrame(saidas)
 
         colunas_necessarias = {
@@ -1082,17 +1104,18 @@ def gerar_relatorio_saidas(data_inicial: str, data_final: str) -> str:
             'partNumber': 'Part Number',
             'serialNumber': 'Serial Number',
             'prefixo_aviao': 'Prefixo',
-            'nome_badeco': 'Badeco EPI',
+            'nome_badeco': 'Ajudante EPI',
             'data_hora': 'Data/Hora',
             'quantidade': 'Quantidade',
             'valor': 'Valor Unit.',
             'classificacao': 'Classificação',
             'placa_camionete': 'Placa',
             'condicao': 'Condição',
-            'origem': 'Origem'
+            'origem': 'Origem',
+            'observacoes': 'Observações'  # Nova coluna adicionada
         }
+                
 
-        # Adicionar colunas faltantes e garantir que são strings
         for col_original, col_novo in colunas_necessarias.items():
             if col_original not in df.columns:
                 df[col_original] = '-'
@@ -1101,7 +1124,6 @@ def gerar_relatorio_saidas(data_inicial: str, data_final: str) -> str:
 
         df = df.rename(columns=colunas_necessarias)
 
-        # Converter colunas numéricas
         df['Quantidade'] = pd.to_numeric(df['Quantidade'], errors='coerce').fillna(0).astype(float)
         df['Valor Unit.'] = pd.to_numeric(df['Valor Unit.'], errors='coerce').fillna(0).astype(float)
         
@@ -1130,7 +1152,6 @@ def gerar_relatorio_saidas(data_inicial: str, data_final: str) -> str:
         df_periodo['Valor Total'] = df_periodo['Quantidade'] * df_periodo['Valor Unit.']
         df_periodo['Valor Total'] = df_periodo['Valor Total'].fillna(0).astype(float)
         
-        # Ordenar por data/hora
         df_periodo = df_periodo.sort_values('Data/Hora')
 
         nome_arquivo = f'Relatorio_{data_inicial.replace("/", "")}_{data_final.replace("/", "")}.xlsx'
@@ -1141,44 +1162,90 @@ def gerar_relatorio_saidas(data_inicial: str, data_final: str) -> str:
             workbook = writer.book
             workbook.nan_inf_to_errors = True
 
+            # Definição das cores
+            cores = {
+                'header': '#1B5E20',  # Verde escuro
+                'subheader': '#2E7D32',  # Verde médio escuro
+                'linha_clara': '#E8F5E9',  # Verde muito claro
+                'linha_escura': '#C8E6C9',  # Verde claro
+                'total': '#81C784',  # Verde médio
+                'total_geral': '#4CAF50'  # Verde vibrante
+            }
+
             formatos = {
                 'money': workbook.add_format({
                     'num_format': 'R$ #,##0.00',
                     'border': 1,
+                    'border_color': '#81C784',
                     'align': 'right'
                 }),
                 'header': workbook.add_format({
                     'bold': True,
                     'align': 'center',
-                    'bg_color': '#D3D3D3',
+                    'bg_color': cores['header'],
+                    'font_color': 'white',
                     'border': 1,
                     'text_wrap': True,
                     'valign': 'vcenter'
                 }),
+                'subheader': workbook.add_format({
+                    'bold': True,
+                    'align': 'left',
+                    'bg_color': cores['subheader'],
+                    'font_color': 'white',
+                    'border': 1
+                }),
                 'data': workbook.add_format({
                     'border': 1,
+                    'border_color': '#81C784',
                     'align': 'left',
                     'valign': 'vcenter'
                 }),
+                'data_clara': workbook.add_format({
+                    'border': 1,
+                    'border_color': '#81C784',
+                    'align': 'left',
+                    'valign': 'vcenter',
+                    'bg_color': cores['linha_clara']
+                }),
+                'data_escura': workbook.add_format({
+                    'border': 1,
+                    'border_color': '#81C784',
+                    'align': 'left',
+                    'valign': 'vcenter',
+                    'bg_color': cores['linha_escura']
+                }),
                 'number': workbook.add_format({
                     'border': 1,
+                    'border_color': '#81C784',
                     'align': 'right'
                 }),
                 'date': workbook.add_format({
                     'border': 1,
+                    'border_color': '#81C784',
                     'align': 'center',
                     'num_format': 'dd/mm/yyyy hh:mm:ss'
                 }),
                 'total': workbook.add_format({
                     'bold': True,
                     'num_format': 'R$ #,##0.00',
-                    'bg_color': '#E6E6E6',
+                    'bg_color': cores['total'],
                     'border': 1,
+                    'border_color': '#4CAF50',
+                    'align': 'right'
+                }),
+                'total_geral': workbook.add_format({
+                    'bold': True,
+                    'num_format': 'R$ #,##0.00',
+                    'bg_color': cores['total_geral'],
+                    'font_color': 'white',
+                    'border': 2,
+                    'border_color': '#1B5E20',
                     'align': 'right'
                 })
             }
 
-            # Criar aba de resumo geral
+            # Aba Resumo Geral
             sheet_resumo = workbook.add_worksheet('Resumo Geral')
 
             larguras_colunas = {
@@ -1186,13 +1253,13 @@ def gerar_relatorio_saidas(data_inicial: str, data_final: str) -> str:
                 'B:B': 15,  # Classificação
                 'C:C': 20,  # Nome
                 'D:D': 20,  # Modelo
-                'E:E': 10,  # Quantidade
-                'F:F': 15,  # Valor Total
-                'G:G': 20,  # Part Number
-                'H:H': 20,  # Serial Number
-                'I:I': 15,  # Prefixo
-                'J:J': 15,  # Condição
-                'K:K': 20,  # Origem
+                'E:E': 20,  # Part Number
+                'F:F': 20,  # Serial Number
+                'G:G': 15,  # Prefixo
+                'H:H': 15,  # Condição
+                'I:I': 20,  # Origem
+                'J:J': 10,  # Quantidade
+                'K:K': 15,  # Valor Total
             }
 
             for col, width in larguras_colunas.items():
@@ -1204,31 +1271,32 @@ def gerar_relatorio_saidas(data_inicial: str, data_final: str) -> str:
                 formatos['header']
             )
 
-            headers = ['Data/Hora', 'Classificação', 'Nome', 'Modelo', 'Quantidade', 'Valor Total',
-                      'Part Number', 'Serial Number', 'Prefixo', 'Condição', 'Origem']
+            headers = ['Data/Hora', 'Classificação', 'Nome', 'Modelo', 'Part Number', 'Serial Number', 
+                    'Prefixo', 'Condição', 'Origem', 'Quantidade', 'Valor Total']
             for idx, header in enumerate(headers):
                 sheet_resumo.write(2, idx, header, formatos['header'])
 
             row = 3
             for _, item in df_periodo.iterrows():
+                formato = formatos['data_clara'] if row % 2 == 0 else formatos['data_escura']
                 sheet_resumo.write(row, 0, item['Data/Hora'], formatos['date'])
-                sheet_resumo.write(row, 1, str(item['Classificação']), formatos['data'])
-                sheet_resumo.write(row, 2, str(item['Nome']), formatos['data'])
-                sheet_resumo.write(row, 3, str(item['Modelo']), formatos['data'])
-                sheet_resumo.write(row, 4, float(item['Quantidade']), formatos['number'])
-                sheet_resumo.write(row, 5, float(item['Valor Total']), formatos['money'])
-                sheet_resumo.write(row, 6, str(item['Part Number']), formatos['data'])
-                sheet_resumo.write(row, 7, str(item['Serial Number']), formatos['data'])
-                sheet_resumo.write(row, 8, str(item['Prefixo']), formatos['data'])
-                sheet_resumo.write(row, 9, str(item['Condição']), formatos['data'])
-                sheet_resumo.write(row, 10, str(item['Origem']), formatos['data'])
+                sheet_resumo.write(row, 1, str(item['Classificação']), formato)
+                sheet_resumo.write(row, 2, str(item['Nome']), formato)
+                sheet_resumo.write(row, 3, str(item['Modelo']), formato)
+                sheet_resumo.write(row, 4, str(item['Part Number']), formato)
+                sheet_resumo.write(row, 5, str(item['Serial Number']), formato)
+                sheet_resumo.write(row, 6, str(item['Prefixo']), formato)
+                sheet_resumo.write(row, 7, str(item['Condição']), formato)
+                sheet_resumo.write(row, 8, str(item['Origem']), formato)
+                sheet_resumo.write(row, 9, float(item['Quantidade']), formatos['number'])
+                sheet_resumo.write(row, 10, float(item['Valor Total']), formatos['money'])
                 row += 1
 
-            sheet_resumo.write(row, 0, 'TOTAL', formatos['header'])
-            sheet_resumo.write(row, 4, float(df_periodo['Quantidade'].sum()), formatos['number'])
-            sheet_resumo.write(row, 5, float(df_periodo['Valor Total'].sum()), formatos['money'])
+            sheet_resumo.merge_range(f'A{row + 1}:J{row + 1}', 'TOTAL', formatos['header'])
+            sheet_resumo.write(row, 10, float(df_periodo['Valor Total'].sum()), formatos['total'])
 
-            # Criar abas por prefixo
+                        
+            # Criar páginas para cada prefixo de avião
             for prefixo in sorted(df_periodo['Prefixo'].unique()):
                 if pd.notna(prefixo) and prefixo != '-':
                     df_prefixo = df_periodo[df_periodo['Prefixo'] == prefixo].copy()
@@ -1245,51 +1313,113 @@ def gerar_relatorio_saidas(data_inicial: str, data_final: str) -> str:
                         'F:F': 15,  # Classificação
                         'G:G': 15,  # Condição
                         'H:H': 20,  # Origem
-                        'I:I': 20,  # Badeco EPI
+                        'I:I': 20,  # Ajudante EPI
                         'J:J': 15,  # Placa
-                        'K:K': 10,  # Quantidade
-                        'L:L': 15,  # Valor Unit.
-                        'M:M': 15,  # Valor Total
+                        'K:K': 20,  # Observações (nova coluna)
+                        'L:L': 10,  # Quantidade
+                        'M:M': 15,  # Valor Unit.
+                        'N:N': 15,  # Valor Total
                     }
 
                     for col, width in larguras_prefixo.items():
                         sheet.set_column(col, width)
 
+                    # Formato do cabeçalho principal (verde escuro)
+                    header_format = workbook.add_format({
+                        'bold': True,
+                        'align': 'center',
+                        'bg_color': '#1B5E20',
+                        'font_color': 'white',
+                        'border': 1,
+                        'text_wrap': True,
+                        'valign': 'vcenter'
+                    })
+
                     sheet.merge_range(
-                        'A1:M1',
+                        'A1:N1',
                         f'SAÍDAS {prefixo} - {data_inicial} a {data_final}',
-                        formatos['header']
+                        header_format
                     )
 
                     colunas_ordenadas = [
                         'Data/Hora', 'Nome', 'Modelo', 'Part Number', 'Serial Number',
-                        'Classificação', 'Condição', 'Origem', 'Badeco EPI', 'Placa',
+                        'Classificação', 'Condição', 'Origem', 'Ajudante EPI', 'Placa', 
+                        'Observações',  # Nova coluna adicionada
                         'Quantidade', 'Valor Unit.', 'Valor Total'
                     ]
 
                     for idx, col in enumerate(colunas_ordenadas):
-                        sheet.write(2, idx, col, formatos['header'])
+                        sheet.write(2, idx, col, header_format)
 
+                    # Formatos para linhas alternadas (verde claro e muito claro)
+                    formato_linha_clara = workbook.add_format({
+                        'border': 1,
+                        'border_color': '#81C784',
+                        'align': 'left',
+                        'bg_color': '#E8F5E9',  # Verde muito claro
+                        'valign': 'vcenter'
+                    })
+
+                    formato_linha_escura = workbook.add_format({
+                        'border': 1,
+                        'border_color': '#81C784',
+                        'align': 'left',
+                        'bg_color': '#C8E6C9',  # Verde claro
+                        'valign': 'vcenter'
+                    })
+
+                    formato_data = workbook.add_format({
+                        'border': 1,
+                        'border_color': '#81C784',
+                        'align': 'center',
+                        'num_format': 'dd/mm/yyyy hh:mm:ss'
+                    })
+
+                    formato_valor = workbook.add_format({
+                        'border': 1,
+                        'border_color': '#81C784',
+                        'align': 'right',
+                        'num_format': 'R$ #,##0.00'
+                    })
+
+                    formato_numero = workbook.add_format({
+                        'border': 1,
+                        'border_color': '#81C784',
+                        'align': 'right'
+                    })
+
+                    linha_alternada = True
                     for row, item in enumerate(df_prefixo[colunas_ordenadas].values, start=3):
+                        formato = formato_linha_clara if linha_alternada else formato_linha_escura
                         for col, value in enumerate(item):
                             if pd.isna(value):
                                 value = '-'
 
                             if colunas_ordenadas[col] == 'Data/Hora':
-                                sheet.write(row, col, value, formatos['date'])
+                                sheet.write(row, col, value, formato_data)
                             elif colunas_ordenadas[col] in ['Valor Unit.', 'Valor Total']:
-                                sheet.write(row, col, float(value), formatos['money'])
+                                sheet.write(row, col, float(value), formato_valor)
                             elif colunas_ordenadas[col] == 'Quantidade':
-                                sheet.write(row, col, float(value), formatos['number'])
+                                sheet.write(row, col, float(value), formato_numero)
                             else:
-                                sheet.write(row, col, str(value), formatos['data'])
+                                sheet.write(row, col, str(value), formato)
+                        linha_alternada = not linha_alternada
+
+                    # Formato para totais
+                    formato_total = workbook.add_format({
+                        'bold': True,
+                        'num_format': 'R$ #,##0.00',
+                        'bg_color': '#81C784',  # Verde médio
+                        'border': 1,
+                        'border_color': '#4CAF50',
+                        'align': 'right'
+                    })
 
                     ultima_linha = len(df_prefixo) + 3
-                    sheet.write(ultima_linha, 0, 'TOTAL', formatos['header'])
-                    sheet.write(ultima_linha, 10, float(df_prefixo['Quantidade'].sum()), formatos['number'])
-                    sheet.write(ultima_linha, 12, float(df_prefixo['Valor Total'].sum()), formatos['total'])
+                    sheet.merge_range(f'A{ultima_linha +1}:M{ultima_linha +1}', 'TOTAL', header_format)
+                    sheet.write(ultima_linha, 13, float(df_prefixo['Valor Total'].sum()), formato_total)
 
-            # Criar aba para itens de consumo (CONS)
+            # Aba de Consumo
             df_consumo = df_periodo[df_periodo['Classificação'] == 'CONS'].copy()
             if not df_consumo.empty:
                 sheet_consumo = workbook.add_worksheet('Consumo')
@@ -1298,35 +1428,35 @@ def gerar_relatorio_saidas(data_inicial: str, data_final: str) -> str:
                     'A:A': 20,  # Data/Hora
                     'B:B': 20,  # Nome
                     'C:C': 20,  # Modelo
-                    'D:D': 20,  # Part Number
-                    'E:E': 15,  # Classificação
-                    'F:F': 15,  # Condição
-                    'G:G': 20,  # Origem
-                    'H:H': 20,  # Badeco EPI
-                    'I:I': 10,  # Quantidade
-                    'J:J': 15,  # Valor Unit.
-                    'K:K': 15,  # Valor Total
-                    }
+                    'D:D': 15,  # Classificação
+                    'E:E': 15,  # Condição
+                    'F:F': 20,  # Origem
+                    'G:G': 10,  # Quantidade
+                    'H:H': 15,  # Valor Unit.
+                    'I:I': 15,  # Valor Total
+                }
 
                 for col, width in larguras_consumo.items():
                     sheet_consumo.set_column(col, width)
 
                 sheet_consumo.merge_range(
-                    'A1:K1',
+                    'A1:I1',
                     f'ITENS DE CONSUMO - {data_inicial} a {data_final}',
                     formatos['header']
                 )
 
                 colunas_consumo = [
-                    'Data/Hora', 'Nome', 'Modelo', 'Part Number', 'Classificação',
-                    'Condição', 'Origem', 'Badeco EPI', 'Quantidade', 'Valor Unit.',
+                    'Data/Hora', 'Nome', 'Modelo', 'Classificação',
+                    'Condição', 'Origem', 'Quantidade', 'Valor Unit.',
                     'Valor Total'
                 ]
 
                 for idx, col in enumerate(colunas_consumo):
                     sheet_consumo.write(2, idx, col, formatos['header'])
 
+                linha_alternada = True
                 for row, item in enumerate(df_consumo[colunas_consumo].values, start=3):
+                    formato = formatos['data_clara'] if linha_alternada else formatos['data_escura']
                     for col, value in enumerate(item):
                         if pd.isna(value):
                             value = '-'
@@ -1338,64 +1468,110 @@ def gerar_relatorio_saidas(data_inicial: str, data_final: str) -> str:
                         elif colunas_consumo[col] == 'Quantidade':
                             sheet_consumo.write(row, col, float(value), formatos['number'])
                         else:
-                            sheet_consumo.write(row, col, str(value), formatos['data'])
+                            sheet_consumo.write(row, col, str(value), formato)
+                    linha_alternada = not linha_alternada
 
                 ultima_linha = len(df_consumo) + 3
-                sheet_consumo.write(ultima_linha, 0, 'TOTAL', formatos['header'])
-                sheet_consumo.write(ultima_linha, 8, float(df_consumo['Quantidade'].sum()), formatos['number'])
-                sheet_consumo.write(ultima_linha, 10, float(df_consumo['Valor Total'].sum()), formatos['total'])
+                sheet_consumo.merge_range(f'A{ultima_linha +1}:H{ultima_linha +1}', 'TOTAL', formatos['header'])
+                sheet_consumo.write(ultima_linha, 8, float(df_consumo['Valor Total'].sum()), formatos['total'])
+                
 
-            # Criar aba de resumo para compras
-            sheet_compras = workbook.add_worksheet('Resumo Compras')
-            
+            # Criar aba única de compras com todas as classificações
+            sheet_compras = workbook.add_worksheet('Compras')
+
             larguras_compras = {
                 'A:A': 25,  # Nome
                 'B:B': 20,  # Modelo
                 'C:C': 20,  # Part Number
-                'D:D': 15,  # Quantidade Total
-                'E:E': 20,  # Valor Total
-                'F:F': 25,  # Último Fornecedor
+                'D:D': 15,  # Classificação
+                'E:E': 15,  # Quantidade Total
+                'F:F': 15,  # Valor Unit.
+                'G:G': 20,  # Valor Total
+                'H:H': 25,  # Origem
             }
 
             for col, width in larguras_compras.items():
                 sheet_compras.set_column(col, width)
 
             sheet_compras.merge_range(
-                'A1:F1',
-                f'RESUMO PARA COMPRAS - {data_inicial} a {data_final}',
+                'A1:H1',
+                f'LISTA DE COMPRAS BASEADA NAS SAÍDAS DO PERÍODO - {data_inicial} a {data_final}',
                 formatos['header']
             )
 
-            headers_compras = ['Nome', 'Modelo', 'Part Number', 'Quantidade Total', 
-                             'Valor Total', 'Último Fornecedor']
-            
+            headers_compras = ['Nome', 'Modelo', 'Part Number', 'Classificação', 
+                            'Quantidade Total', 'Valor Unit.', 'Valor Total', 
+                            'Origem']
+
             for idx, header in enumerate(headers_compras):
                 sheet_compras.write(2, idx, header, formatos['header'])
 
-            # Agrupar itens para resumo de compras
-            df_compras = df_periodo.groupby(['Nome', 'Modelo', 'Part Number', 'Origem']).agg({
-                'Quantidade': 'sum',
-                'Valor Total': 'sum'
-            }).reset_index()
+            row = 3
+            valor_total_geral = 0
+            totais_por_classificacao = {}  # Dicionário para armazenar os totais
 
-            # Ordenar por nome
-            df_compras = df_compras.sort_values('Nome')
+            # Lista ordenada de classificações
+            classificacoes_ordem = ['AERO', 'AUTO', 'EPI', 'CONS']
+            classificacoes_existentes = [c for c in classificacoes_ordem if c in df_periodo['Classificação'].unique()]
 
-            for row, item in enumerate(df_compras.iterrows(), start=3):
-                item = item[1]  # Pegar os dados do item
-                sheet_compras.write(row, 0, str(item['Nome']), formatos['data'])
-                sheet_compras.write(row, 1, str(item['Modelo']), formatos['data'])
-                sheet_compras.write(row, 2, str(item['Part Number']), formatos['data'])
-                sheet_compras.write(row, 3, float(item['Quantidade']), formatos['number'])
-                sheet_compras.write(row, 4, float(item['Valor Total']), formatos['money'])
-                sheet_compras.write(row, 5, str(item['Origem']), formatos['data'])
+            # Adicionar uma linha em branco antes de começar
+            row += 1
 
-            # Adicionar totais na página de compras
-            ultima_linha = len(df_compras) + 3
-            sheet_compras.write(ultima_linha, 0, 'TOTAL', formatos['header'])
-            sheet_compras.write(ultima_linha, 3, float(df_compras['Quantidade'].sum()), formatos['number'])
-            sheet_compras.write(ultima_linha, 4, float(df_compras['Valor Total'].sum()), formatos['total'])
+            for classificacao in classificacoes_existentes:
+                df_class = df_periodo[df_periodo['Classificação'] == classificacao].copy()
+                
+                # Cabeçalho da classificação
+                sheet_compras.merge_range(f'A{row}:H{row}', f'Classificação: {classificacao}', formatos['subheader'])
+                row += 1
+                
+                # Agrupar itens por classificação
+                df_itens = df_class.groupby(['Nome', 'Modelo', 'Part Number', 'Valor Unit.', 'Origem']).agg({
+                    'Quantidade': 'sum'
+                }).reset_index()
+                
+                df_itens['Valor Total'] = df_itens['Quantidade'] * df_itens['Valor Unit.']
+                df_itens = df_itens.sort_values(['Origem', 'Nome'])
+                
+                linha_alternada = True
+                for _, item in df_itens.iterrows():
+                    formato = formatos['data_clara'] if linha_alternada else formatos['data_escura']
+                    sheet_compras.write(row, 0, str(item['Nome']), formato)
+                    sheet_compras.write(row, 1, str(item['Modelo']), formato)
+                    sheet_compras.write(row, 2, str(item['Part Number']), formato)
+                    sheet_compras.write(row, 3, classificacao, formato)
+                    sheet_compras.write(row, 4, float(item['Quantidade']), formatos['number'])
+                    sheet_compras.write(row, 5, float(item['Valor Unit.']), formatos['money'])
+                    sheet_compras.write(row, 6, float(item['Valor Total']), formatos['money'])
+                    sheet_compras.write(row, 7, str(item['Origem']), formato)
+                    row += 1
+                    linha_alternada = not linha_alternada
 
+                # Total da classificação
+                total_classificacao = df_itens['Valor Total'].sum()
+                totais_por_classificacao[classificacao] = total_classificacao  # Armazenar o total
+                sheet_compras.merge_range(f'A{row + 1}:F{row + 1}', f'Total {classificacao}', formatos['total'])
+                sheet_compras.write(row, 6, float(total_classificacao), formatos['total'])
+                sheet_compras.write(row, 7, '', formatos['total'])  # Célula vazia formatada
+                row += 1
+                
+                # Adicionar uma linha em branco após cada classificação
+                row += 1
+                
+                valor_total_geral += total_classificacao
+
+            # Adicionar uma linha em branco antes do total geral
+            row += 1
+
+            # Total Geral
+            sheet_compras.merge_range(f'A{row}:E{row}', 'TOTAL GERAL ESTIMADO:', formatos['total_geral'])
+            sheet_compras.merge_range(f'F{row}:G{row}', valor_total_geral, formatos['total_geral'])  # Mesclando G e H para manter alinhado
+
+            row += 1
+
+            # Adicionar linha com asterisco
+            sheet_compras.merge_range(f'A{row}:G{row}', '* Valores podem variar conforme fornecedor e data da compra', formatos['data_clara'])
+
+            # Salvar e fechar o arquivo
             writer.close()
             logging.info(f"Relatório gerado com sucesso: {caminho_completo}")
             print(f"\nRelatório gerado com sucesso!")
