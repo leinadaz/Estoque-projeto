@@ -158,6 +158,13 @@ def selecionar_classificacao():
         print("Opção inválida! Por favor, tente novamente.")
 
 
+import os
+import json
+from datetime import datetime
+
+
+# registrar entrada
+
 @salvar_dados_seguro
 @verificar_cancelamento
 def adicionar_produto():
@@ -170,13 +177,11 @@ def adicionar_produto():
     if classificacao.lower() == 'cancelar':
         return
 
-    # Verifica se quer adicionar a um produto existente primeiro
     opcao = input("Deseja adicionar a um produto existente? (S/N): ")
     if opcao.lower() == 'cancelar':
         return
 
     if opcao.lower() == 's':
-        # Busca produto existente
         print("\nBusca de produto existente:")
         print("1 - Buscar por Nome")
         print("2 - Buscar por Modelo")
@@ -191,23 +196,18 @@ def adicionar_produto():
         if termo_busca.lower() == 'cancelar':
             return
 
-        # Filtra os produtos
         resultados = []
         if opcao_busca == "1":
-            resultados = [p for p in banco.estoque if termo_busca.lower(
-            ) in p['nome'].lower() and p['classificacao'] == classificacao]
+            resultados = [p for p in banco.estoque if termo_busca.lower() in p['nome'].lower() and p['classificacao'] == classificacao]
         elif opcao_busca == "2":
-            resultados = [p for p in banco.estoque if termo_busca.lower(
-            ) in p['modelo'].lower() and p['classificacao'] == classificacao]
+            resultados = [p for p in banco.estoque if termo_busca.lower() in p['modelo'].lower() and p['classificacao'] == classificacao]
         elif opcao_busca == "3" and classificacao == "AERO":
-            resultados = [p for p in banco.estoque if termo_busca.lower() in str(
-                p.get('partNumber', '')).lower()]
+            resultados = [p for p in banco.estoque if termo_busca.lower() in str(p.get('partNumber', '')).lower()]
 
         if resultados:
             print("\nProdutos encontrados:")
             for i, produto in enumerate(resultados):
-                part_number = f", PN: {produto.get(
-                    'partNumber', 'N/A')}" if classificacao == "AERO" else ""
+                part_number = f", PN: {produto.get('partNumber', 'N/A')}" if classificacao == "AERO" else ""
                 print(f"{i + 1} - Nome: {produto['nome']}, Modelo: {produto['modelo']}{part_number}, "
                       f"Condição: {produto.get('condicao', 'N/A')}, Quantidade: {produto['quantidade']}")
 
@@ -221,8 +221,7 @@ def adicionar_produto():
                     return
 
                 produto_existente['quantidade'] += quantidade
-                print(f"Quantidade atualizada com sucesso! Nova quantidade: {
-                      produto_existente['quantidade']}")
+                print(f"Quantidade atualizada com sucesso! Nova quantidade: {produto_existente['quantidade']}")
                 banco.salvar_dados()
                 return
 
@@ -230,10 +229,8 @@ def adicionar_produto():
                 print("Seleção inválida!")
                 return
         else:
-            print(
-                "Nenhum produto encontrado. Continuando com cadastro de novo produto...")
+            print("Nenhum produto encontrado. Continuando com cadastro de novo produto...")
 
-    # Cadastro de novo produto
     produto = {
         'classificacao': classificacao,
         'nome': '',
@@ -241,10 +238,10 @@ def adicionar_produto():
         'valor': 0,
         'quantidade': 0,
         'origem': '',
-        'data': datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+        'data': datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+        'partNumber': '-'
     }
 
-    # Campo de condição para todos os produtos exceto CONS
     if classificacao != "CONS":
         print("\nCondição do produto:")
         print("1 - Novo")
@@ -256,15 +253,10 @@ def adicionar_produto():
             if condicao_opcao.lower() == 'cancelar':
                 return
             if condicao_opcao in ['1', '2', '3']:
-                produto['condicao'] = {
-                    '1': 'Novo',
-                    '2': 'Usado',
-                    '3': 'Revisado'
-                }[condicao_opcao]
+                produto['condicao'] = {'1': 'Novo', '2': 'Usado', '3': 'Revisado'}[condicao_opcao]
                 break
             print("Opção inválida!")
 
-    # Campos comuns para todos os tipos
     produto['nome'] = input("Nome----------> ")
     if produto['nome'].lower() == 'cancelar':
         return
@@ -287,22 +279,15 @@ def adicionar_produto():
     if produto['origem'].lower() == 'cancelar':
         return
 
-    # Campos específicos por classificação
     if classificacao == "AERO":
-        produto['partNumber'] = input(
-            "PartNumber (opcional, pressione Enter para pular): ")
-    if produto['partNumber'].lower() == 'cancelar':
-        return
-
-    # Se não for preenchido, define como traço
-    if not produto['partNumber'].strip():
-        produto['partNumber'] = '-'
+        produto['partNumber'] = input("PartNumber (opcional, pressione Enter para pular): ") or '-'
+        if produto['partNumber'].lower() == 'cancelar':
+            return
 
     banco.estoque.append(produto)
     print(f"Produto {produto['nome']} adicionado com sucesso!")
     banco.salvar_dados()
 
-    # Registro do log de entrada
     arquivo_log = 'backup/estoque_entradas.json'
     if not os.path.exists('backup'):
         os.makedirs('backup')
@@ -319,6 +304,7 @@ def adicionar_produto():
 
 
 # registrar saida
+
 
 
 @salvar_dados_seguro
@@ -342,14 +328,11 @@ def registrar_saida():
             return
 
         if opcao_busca == "1":
-            resultados = [
-                p for p in banco.estoque if termo_busca.lower() in p['nome'].lower()]
+            resultados = [p for p in banco.estoque if termo_busca.lower() in p['nome'].lower()]
         elif opcao_busca == "2":
-            resultados = [
-                p for p in banco.estoque if termo_busca.lower() in p['modelo'].lower()]
+            resultados = [p for p in banco.estoque if termo_busca.lower() in p['modelo'].lower()]
         elif opcao_busca == "3":
-            resultados = [p for p in banco.estoque if termo_busca.lower() in str(
-                p.get('partNumber', '')).lower()]
+            resultados = [p for p in banco.estoque if termo_busca.lower() in str(p.get('partNumber', '')).lower()]
         else:
             print("Opção inválida! Tente novamente.")
             return
@@ -360,16 +343,14 @@ def registrar_saida():
 
         print("\nProdutos encontrados:")
         for i, produto in enumerate(resultados):
-            part_number = f", PN: {produto.get(
-                'partNumber', 'N/A')}" if 'partNumber' in produto else ""
+            part_number = f", PN: {produto.get('partNumber', 'N/A')}" if 'partNumber' in produto else ""
             print(f"{i + 1} - Nome: {produto['nome']}, Modelo: {produto['modelo']}"
                   f"{part_number}, Classificação: {produto['classificacao']}, "
                   f"Condição: {produto.get('condicao', 'N/A')}, "
                   f"Quantidade: {produto['quantidade']}")
 
         try:
-            escolha = int(
-                input("\nSelecione o número do produto para saída: ")) - 1
+            escolha = int(input("\nSelecione o número do produto para saída: ")) - 1
             produto_selecionado = resultados[escolha]
         except (ValueError, IndexError):
             print("Seleção inválida!")
@@ -392,8 +373,7 @@ def registrar_saida():
             if data_manual.lower() == "cancelar":
                 return
             try:
-                data = datetime.strptime(
-                    data_manual, "%d/%m/%Y").strftime("%d/%m/%Y")
+                data = datetime.strptime(data_manual, "%d/%m/%Y").strftime("%d/%m/%Y")
                 break
             except ValueError:
                 print("Data inválida! Use o formato DD/MM/AAAA")
@@ -419,8 +399,7 @@ def registrar_saida():
                 print("Para peças AERO, o prefixo do avião é obrigatório!")
                 return
 
-            serial_number = input(
-                "Digite o Serial Number da peça (opcional): ")
+            serial_number = input("Digite o Serial Number da peça (opcional): ")
             if serial_number.lower() == "cancelar":
                 return
 
@@ -430,8 +409,8 @@ def registrar_saida():
 
             saida.update({
                 'prefixo_aviao': prefixo,
-                'serialNumber': serial_number if serial_number.strip() else 'N/A',
-                'observacoes': observacoes if observacoes.strip() else 'N/A'
+                'serialNumber': serial_number.strip() if serial_number.strip() else 'N/A',
+                'observacoes': observacoes.strip() if observacoes.strip() else 'N/A'
             })
 
         elif produto_selecionado['classificacao'] == "AUTO":
@@ -441,6 +420,7 @@ def registrar_saida():
             if not prefixo.strip():
                 print("Para peças AUTO, o prefixo é obrigatório!")
                 return
+
             placa = input("Digite a placa da camionete (obrigatório): ")
             if placa.lower() == "cancelar":
                 return
@@ -455,7 +435,7 @@ def registrar_saida():
             saida.update({
                 'prefixo_aviao': prefixo,
                 'placa_camionete': placa,
-                'observacoes': observacoes if observacoes.strip() else 'N/A'
+                'observacoes': observacoes.strip() if observacoes.strip() else 'N/A'
             })
 
         elif produto_selecionado['classificacao'] == "EPI":
@@ -465,6 +445,7 @@ def registrar_saida():
             if not prefixo.strip():
                 print("Para peças EPI, o prefixo é obrigatório!")
                 return
+
             nome_badeco = input("Digite o nome do badeco (obrigatório): ")
             if nome_badeco.lower() == "cancelar":
                 return
@@ -479,28 +460,34 @@ def registrar_saida():
             saida.update({
                 'prefixo_aviao': prefixo,
                 'nome_badeco': nome_badeco,
-                'observacoes': observacoes if observacoes.strip() else 'N/A'
+                'observacoes': observacoes.strip() if observacoes.strip() else 'N/A'
             })
 
         elif produto_selecionado['classificacao'] == "CONS":
+            prefixo = input("Digite o prefixo (opcional): ")
+            if prefixo.lower() == "cancelar":
+                return
+            
             observacoes = input("Observações (opcional): ")
             if observacoes.lower() == "cancelar":
                 return
-            saida['observacoes'] = observacoes if observacoes.strip() else 'N/A'
+            
+            saida.update({
+                'prefixo_aviao': prefixo.strip() if prefixo.strip() else 'N/A',
+                'observacoes': observacoes.strip() if observacoes.strip() else 'N/A'
+            })
 
         produto_selecionado['quantidade'] -= quantidade
 
         if getattr(sys, 'frozen', False):
             base_path = os.path.dirname(os.path.dirname(sys.executable))
         else:
-            base_path = os.path.dirname(os.path.dirname(
-                os.path.dirname(os.path.abspath(__file__))))
+            base_path = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
         caminho_backup = os.path.join(base_path, 'backup')
         os.makedirs(caminho_backup, exist_ok=True)
 
-        arquivo_saidas = os.path.join(
-            base_path, 'backup', 'estoque_saidas.json')
+        arquivo_saidas = os.path.join(base_path, 'backup', 'estoque_saidas.json')
 
         try:
             with open(arquivo_saidas, 'r', encoding='utf-8') as f:
@@ -638,6 +625,7 @@ def mostrar_estoque():
         aero = [p for p in banco.estoque if p['classificacao'] == "AERO"]
         auto = [p for p in banco.estoque if p['classificacao'] == "AUTO"]
         epi = [p for p in banco.estoque if p['classificacao'] == "EPI"]
+        cons = [p for p in banco.estoque if p['classificacao'] == "CONS"]
 
         def mostrar_produto(produto):
             print("=" * 50)
@@ -645,14 +633,14 @@ def mostrar_estoque():
             print(f"Modelo       : {produto['modelo']}")
             print(f"Quantidade   : {produto['quantidade']}")
             print(f"Valor        : R${produto['valor']:.2f}")
+            print(f"Condição     : {produto.get('condicao', 'N/A')}")
 
             if produto['classificacao'] == "AERO":
                 print(f"PartNumber   : {produto.get('partNumber', 'N/A')}")
                 print(f"SerialNumber : {produto.get('serialNumber', 'N/A')}")
                 print(f"Prefixo Avião: {produto.get('prefixo_aviao', 'N/A')}")
             elif produto['classificacao'] == "AUTO":
-                print(f"Placa        : {
-                      produto.get('placa_camionete', 'N/A')}")
+                print(f"Placa        : {produto.get('placa_camionete', 'N/A')}")
                 print(f"Prefixo Avião: {produto.get('prefixo_aviao', 'N/A')}")
             elif produto['classificacao'] == "EPI":
                 print(f"Funcionário  : {produto.get('nome_badeco', 'N/A')}")
@@ -673,10 +661,14 @@ def mostrar_estoque():
             for produto in epi:
                 mostrar_produto(produto)
 
+        if cons:
+            print("\n=== CONSUMÍVEIS ===")
+            for produto in cons:
+                mostrar_produto(produto)
+
     # Aguarda o usuário digitar "voltar" antes de retornar ao menu principal
     while True:
-        opcao = input(
-            "\nDigite 'voltar' para retornar ao menu: ").strip().lower()
+        opcao = input("\nDigite 'voltar' para retornar ao menu: ").strip().lower()
         if opcao == "voltar":
             break
 
@@ -746,6 +738,8 @@ def buscar_produto():
         print("Nenhum produto encontrado.")
 
     input("\nDigite 'voltar' para retornar ao menu: ")
+
+
 # editar produto
 
 
