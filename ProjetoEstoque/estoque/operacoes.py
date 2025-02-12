@@ -158,12 +158,8 @@ def selecionar_classificacao():
         print("Opção inválida! Por favor, tente novamente.")
 
 
-import os
-import json
-from datetime import datetime
-
-
 # registrar entrada
+
 
 @salvar_dados_seguro
 @verificar_cancelamento
@@ -180,6 +176,14 @@ def adicionar_produto():
     opcao = input("Deseja adicionar a um produto existente? (S/N): ")
     if opcao.lower() == 'cancelar':
         return
+
+    # Antecipando a pergunta sobre mangueira
+    is_mangueira = False
+    if classificacao == "CONS":
+        tipo = input("É mangueira? (S/N): ").lower()
+        if tipo == 'cancelar':
+            return
+        is_mangueira = (tipo == 's')
 
     if opcao.lower() == 's':
         print("\nBusca de produto existente:")
@@ -208,14 +212,22 @@ def adicionar_produto():
             print("\nProdutos encontrados:")
             for i, produto in enumerate(resultados):
                 part_number = f", PN: {produto.get('partNumber', 'N/A')}" if classificacao == "AERO" else ""
-                print(f"{i + 1} - Nome: {produto['nome']}, Modelo: {produto['modelo']}{part_number}, "
-                      f"Condição: {produto.get('condicao', 'N/A')}, Quantidade: {produto['quantidade']}")
+                if produto.get('tipo_produto') == 'mangueira':
+                    print(f"{i + 1} - Nome: {produto['nome']}, Modelo: {produto['modelo']}, "
+                          f"Quantidade: {produto['quantidade']} metros")
+                else:
+                    print(f"{i + 1} - Nome: {produto['nome']}, Modelo: {produto['modelo']}{part_number}, "
+                          f"Condição: {produto.get('condicao', 'N/A')}, Quantidade: {produto['quantidade']}")
 
             try:
                 escolha = int(input("\nSelecione o número do produto: ")) - 1
                 produto_existente = resultados[escolha]
 
-                quantidade = int(input("Quantidade a adicionar: "))
+                if produto_existente.get('tipo_produto') == 'mangueira':
+                    quantidade = float(input("Quantidade a adicionar (em metros, ex: 0.2 para 20cm): "))
+                else:
+                    quantidade = int(input("Quantidade a adicionar: "))
+                
                 if quantidade <= 0:
                     print("Quantidade inválida!")
                     return
@@ -239,7 +251,9 @@ def adicionar_produto():
         'quantidade': 0,
         'origem': '',
         'data': datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
-        'partNumber': '-'
+        'partNumber': '-',
+        'serialNumber': '-',
+        'tipo_produto': 'mangueira' if is_mangueira else 'normal'
     }
 
     if classificacao != "CONS":
@@ -261,19 +275,34 @@ def adicionar_produto():
     if produto['nome'].lower() == 'cancelar':
         return
 
-    produto['modelo'] = input("Modelo--------> ")
-    if produto['modelo'].lower() == 'cancelar':
-        return
-
-    quantidade = input("Quantidade----> ")
-    if quantidade.lower() == 'cancelar':
-        return
-    produto['quantidade'] = int(quantidade)
-
-    valor = input("Valor Unidade-> ")
-    if valor.lower() == 'cancelar':
-        return
-    produto['valor'] = float(valor)
+    if is_mangueira:
+        produto['modelo'] = input("Modelo (inclua o diâmetro)--------> ")
+        if produto['modelo'].lower() == 'cancelar':
+            return
+        
+        quantidade = input("Quantidade (em metros, ex: 0.2 para 20cm)----> ")
+        if quantidade.lower() == 'cancelar':
+            return
+        produto['quantidade'] = float(quantidade)
+        
+        valor = input("Valor por METRO-> R$ ")
+        if valor.lower() == 'cancelar':
+            return
+        produto['valor'] = float(valor)
+    else:
+        produto['modelo'] = input("Modelo--------> ")
+        if produto['modelo'].lower() == 'cancelar':
+            return
+            
+        quantidade = input("Quantidade----> ")
+        if quantidade.lower() == 'cancelar':
+            return
+        produto['quantidade'] = int(quantidade)
+        
+        valor = input("Valor Unidade-> R$ ")
+        if valor.lower() == 'cancelar':
+            return
+        produto['valor'] = float(valor)
 
     produto['origem'] = input("Origem--------> ")
     if produto['origem'].lower() == 'cancelar':
@@ -282,6 +311,9 @@ def adicionar_produto():
     if classificacao == "AERO":
         produto['partNumber'] = input("PartNumber (opcional, pressione Enter para pular): ") or '-'
         if produto['partNumber'].lower() == 'cancelar':
+            return
+        produto['serialNumber'] = input("SerialNumber (opcional, pressione Enter para pular): ") or '-'
+        if produto['serialNumber'].lower() == 'cancelar':
             return
 
     banco.estoque.append(produto)
@@ -304,7 +336,6 @@ def adicionar_produto():
 
 
 # registrar saida
-
 
 
 @salvar_dados_seguro
@@ -343,11 +374,16 @@ def registrar_saida():
 
         print("\nProdutos encontrados:")
         for i, produto in enumerate(resultados):
-            part_number = f", PN: {produto.get('partNumber', 'N/A')}" if 'partNumber' in produto else ""
-            print(f"{i + 1} - Nome: {produto['nome']}, Modelo: {produto['modelo']}"
-                  f"{part_number}, Classificação: {produto['classificacao']}, "
-                  f"Condição: {produto.get('condicao', 'N/A')}, "
-                  f"Quantidade: {produto['quantidade']}")
+            if produto.get('tipo_produto') == 'mangueira':
+                print(f"{i + 1} - Nome: {produto['nome']}, Modelo: {produto['modelo']}, "
+                      f"Quantidade disponível: {produto['quantidade']} metros, "
+                      f"Valor por metro: R$ {produto['valor']:.2f}")
+            else:
+                part_number = f", PN: {produto.get('partNumber', 'N/A')}" if 'partNumber' in produto else ""
+                print(f"{i + 1} - Nome: {produto['nome']}, Modelo: {produto['modelo']}"
+                      f"{part_number}, Classificação: {produto['classificacao']}, "
+                      f"Condição: {produto.get('condicao', 'N/A')}, "
+                      f"Quantidade: {produto['quantidade']}")
 
         try:
             escolha = int(input("\nSelecione o número do produto para saída: ")) - 1
@@ -357,7 +393,15 @@ def registrar_saida():
             return
 
         try:
-            quantidade = int(input("Quantidade para saída: "))
+            if produto_selecionado.get('tipo_produto') == 'mangueira':
+                print(f"\nQuantidade disponível: {produto_selecionado['quantidade']} metros")
+                quantidade = float(input("Quantidade para saída (em metros, ex: 0.2 para 20cm): "))
+                valor_total = quantidade * produto_selecionado['valor']
+                print(f"\nValor calculado: R$ {valor_total:.2f} "
+                      f"({quantidade:.1f}m x R$ {produto_selecionado['valor']:.2f}/m)")
+            else:
+                quantidade = int(input("Quantidade para saída: "))
+            
             if quantidade > produto_selecionado['quantidade']:
                 print("Quantidade insuficiente em estoque!")
                 return
@@ -390,6 +434,12 @@ def registrar_saida():
             'partNumber': produto_selecionado.get('partNumber', 'N/A'),
             'observacoes': 'N/A'
         }
+
+        if produto_selecionado.get('tipo_produto') == 'mangueira':
+            saida.update({
+                'tipo_produto': 'mangueira',
+                'valor_total': valor_total
+            })
 
         if produto_selecionado['classificacao'] == "AERO":
             prefixo = input("Digite o prefixo do avião (obrigatório): ")
@@ -505,12 +555,18 @@ def registrar_saida():
             print(f"Produto removido do estoque.")
 
         banco.salvar_dados()
-        print("Saída registrada com sucesso!")
+        if produto_selecionado.get('tipo_produto') == 'mangueira':
+            print(f"\nSaída registrada com sucesso!")
+            print(f"Quantidade retirada: {quantidade:.1f}m")
+            print(f"Valor total: R$ {valor_total:.2f}")
+        else:
+            print("Saída registrada com sucesso!")
 
     except Exception as e:
         logging.error(f"Erro ao registrar saída: {str(e)}")
         print(f"Erro ao registrar saída: {str(e)}")
         return None
+
 
 # Função para registrar o descarte de um produto
 
@@ -738,8 +794,6 @@ def buscar_produto():
         print("Nenhum produto encontrado.")
 
     input("\nDigite 'voltar' para retornar ao menu: ")
-
-
 # editar produto
 
 
@@ -748,9 +802,10 @@ def buscar_produto():
 def editar_produto():
     limpar_tela()
     print("\nEditar produto no estoque:")
-    print("1. Buscar por Nome")
-    print("2. Buscar por Modelo")
-    opcao = input("Escolha uma opção (1-2): ").strip()
+    print("1 - Buscar por Nome")
+    print("2 - Buscar por Modelo")
+    print("3 - Buscar por Part Number (apenas para AERO)")
+    opcao = input("Escolha uma opção (1-3): ").strip()
 
     if opcao.lower() == "cancelar":
         return
@@ -761,11 +816,11 @@ def editar_produto():
 
     resultados = []
     if opcao == "1":
-        resultados = [p for p in banco.estoque if termo_busca.lower()
-                      in p['nome'].lower()]
+        resultados = [p for p in banco.estoque if termo_busca.lower() in p['nome'].lower()]
     elif opcao == "2":
-        resultados = [p for p in banco.estoque if termo_busca.lower()
-                      in p['modelo'].lower()]
+        resultados = [p for p in banco.estoque if termo_busca.lower() in p['modelo'].lower()]
+    elif opcao == "3":
+        resultados = [p for p in banco.estoque if termo_busca.lower() in str(p.get('partNumber', '')).lower()]
     else:
         print("Opção inválida.")
         return
@@ -773,69 +828,114 @@ def editar_produto():
     if resultados:
         print("\nProdutos encontrados:")
         for idx, produto in enumerate(resultados):
-            print(f"\n{idx + 1}. Nome: {produto['nome']}, Modelo: {produto['modelo']}, "
-                  f"Classificação: {produto['classificacao']}")
+            part_number = f", PN: {produto.get('partNumber', 'N/A')}" if produto['classificacao'] == "AERO" else ""
+            condicao = f", Condição: {produto.get('condicao', 'N/A')}"
+            print(f"\n{idx + 1}. Nome: {produto['nome']}, Modelo: {produto['modelo']}{part_number}"
+                  f"{condicao}, Quantidade: {produto['quantidade']}, "
+                  f"Valor: R${produto['valor']:.2f}")
 
         try:
-            escolha = int(
-                input("\nEscolha o número do produto correspondente para editar: "))
-            if escolha.lower == "cancelar":
+            escolha = int(input("\nEscolha o número do produto correspondente para editar: "))
+            if str(escolha).lower() == "cancelar":
                 return
 
             produto_selecionado = resultados[escolha - 1]
+            index_original = banco.estoque.index(produto_selecionado)
 
             print("\nDados atuais do produto:")
             for key, value in produto_selecionado.items():
-                print(f"- {key}: {value}")
+                if isinstance(value, float):
+                    print(f"- {key}: R${value:.2f}")
+                else:
+                    print(f"- {key}: {value}")
 
-            # Define campos editáveis baseados na classificação
-            campos_comuns = {
-                '1': 'nome',
-                '2': 'modelo',
-                '3': 'quantidade',
-                '4': 'valor'
+            campos = {
+                '1': 'classificacao',
+                '2': 'nome',
+                '3': 'modelo',
+                '4': 'quantidade',
+                '5': 'valor',
+                '6': 'origem'
             }
 
-            campos_especificos = {}
-            if produto_selecionado['classificacao'] == "AERO":
-                campos_especificos.update({
-                    '5': 'partNumber',
-                    '6': 'serialNumber',
-                    '7': 'prefixo_aviao'
-                })
-            elif produto_selecionado['classificacao'] == "AUTO":
-                campos_especificos.update({
-                    '5': 'placa_camionete',
-                    '6': 'prefixo_aviao'
-                })
-            elif produto_selecionado['classificacao'] == "EPI":
-                campos_especificos.update({
-                    '5': 'nome_badeco',
-                    '6': 'prefixo_aviao'
-                })
+            if produto_selecionado['classificacao'] != "CONS":
+                campos['7'] = 'condicao'
 
-            campos = {**campos_comuns, **campos_especificos}
+            if produto_selecionado['classificacao'] == "AERO":
+                campos['8'] = 'partNumber'
 
             print("\nCampos disponíveis para edição:")
             for num, campo in campos.items():
                 print(f"{num}. {campo}")
 
             campo_escolhido = input("\nEscolha o campo para editar: ").strip()
-            if campo_escolhido not in campos:
-                print("Campo inválido.")
+            if campo_escolhido.lower() == "cancelar" or campo_escolhido not in campos:
                 return
 
-            novo_valor = input("Digite o novo valor: ").strip()
-            if novo_valor.lower() == "cancelar":
+            campo = campos[campo_escolhido]
+            valor_anterior = produto_selecionado[campo]
+
+            if campo == 'classificacao':
+                print("\nClassificações disponíveis:")
+                print("1 - AERO")
+                print("2 - AUTO")
+                print("3 - EPI")
+                print("4 - CONS")
+                opcao_class = input("Escolha a classificação (1-4): ")
+                if opcao_class.lower() == "cancelar":
+                    return
+                classificacoes = {'1': 'AERO', '2': 'AUTO', '3': 'EPI', '4': 'CONS'}
+                novo_valor = classificacoes.get(opcao_class)
+                if not novo_valor:
+                    print("Classificação inválida.")
+                    return
+
+            elif campo == 'condicao':
+                print("\nCondições disponíveis:")
+                print("1 - Novo")
+                print("2 - Usado")
+                print("3 - Revisado")
+                opcao_cond = input("Escolha a condição (1-3): ")
+                if opcao_cond.lower() == "cancelar":
+                    return
+                condicoes = {'1': 'Novo', '2': 'Usado', '3': 'Revisado'}
+                novo_valor = condicoes.get(opcao_cond)
+                if not novo_valor:
+                    print("Condição inválida.")
+                    return
+
+            else:
+                novo_valor = input(f"Digite o novo valor para {campo}: ").strip()
+                if novo_valor.lower() == "cancelar":
+                    return
+
+                if campo == 'quantidade':
+                    try:
+                        novo_valor = int(novo_valor)
+                        if novo_valor < 0:
+                            print("Quantidade não pode ser negativa.")
+                            return
+                    except ValueError:
+                        print("Quantidade deve ser um número inteiro.")
+                        return
+
+                elif campo == 'valor':
+                    try:
+                        novo_valor = float(novo_valor)
+                        if novo_valor < 0:
+                            print("Valor não pode ser negativo.")
+                            return
+                    except ValueError:
+                        print("Valor deve ser um número.")
+                        return
+
+            confirmar = input(f"\nConfirmar alteração de '{valor_anterior}' para '{novo_valor}'? (S/N): ")
+            if confirmar.lower() != 's':
+                print("Alteração cancelada.")
                 return
 
-            # Converte valores numéricos
-            if campos[campo_escolhido] == 'quantidade':
-                novo_valor = int(novo_valor)
-            elif campos[campo_escolhido] == 'valor':
-                novo_valor = float(novo_valor)
-
-            produto_selecionado[campos[campo_escolhido]] = novo_valor
+            produto_selecionado[campo] = novo_valor
+            banco.estoque[index_original] = produto_selecionado
             banco.salvar_dados()
             print("Produto atualizado com sucesso!")
 
