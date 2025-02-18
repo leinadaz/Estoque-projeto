@@ -1575,8 +1575,8 @@ def gerar_relatorio_saidas(data_inicial: str, data_final: str) -> str:
                 sheet_consumo.write(ultima_linha, 8, float(
                     df_consumo['Valor Total'].sum()), formatos['total'])
 
-            # Criar aba única de compras com todas as classificações
-            sheet_compras = workbook.add_worksheet('Compras')
+            # Criar aba única de saidas com todas as classificações
+            sheet_compras = workbook.add_worksheet('Saídas')
 
             larguras_compras = {
                 'A:A': 25,  # Nome
@@ -1593,10 +1593,9 @@ def gerar_relatorio_saidas(data_inicial: str, data_final: str) -> str:
                 sheet_compras.set_column(col, width)
 
             sheet_compras.merge_range(
-                'A1:H1',
-                f'LISTA DE COMPRAS BASEADA NAS SAÍDAS DO PERÍODO - {
-                    data_inicial} a {data_final}',
-                formatos['header']
+            'A1:H1',
+            f'SAÍDAS POR CLASSIFICAÇÃO DO PERÍODO - {data_inicial} a {data_final}',
+            formatos['header']
             )
 
             headers_compras = ['Nome', 'Modelo', 'Part Number', 'Classificação',
