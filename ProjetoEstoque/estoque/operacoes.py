@@ -42,7 +42,7 @@ def verificar_cancelamento(func):
 def salvar_dados_seguro(func):
     """
     Decorador para garantir o salvamento seguro de dados com backup automático
-    e registro de erros.
+    e registro de erros!!
     """
     @wraps(func)
     def wrapper(*args, **kwargs):
@@ -66,18 +66,14 @@ def salvar_dados_seguro(func):
             return None
 
         try:
-            # Executar a função original
             result = func(*args, **kwargs)
-
-            # Salvar dados
             banco.salvar_dados()
-
             return result
 
         except Exception as e:
             # Registrar erro em um arquivo de log
             error_msg = f"[{datetime.now()}] Erro na função {
-                func.__name__}: {str(e)}\n"
+                func.__name__}: {str(e)}"
 
             try:
                 with open('error_log.txt', 'a') as f:
@@ -85,7 +81,6 @@ def salvar_dados_seguro(func):
             except:
                 print("Não foi possível salvar o log de erro")
 
-            # Tentar restaurar backup em caso de erro
             try:
                 if os.path.exists(backup_file):
                     with open(backup_file, 'r') as f:
@@ -223,17 +218,22 @@ def adicionar_produto():
                 escolha = int(input("\nSelecione o número do produto: ")) - 1
                 produto_existente = resultados[escolha]
 
+                # Verifica se o produto é uma mangueira para tratar corretamente
                 if produto_existente.get('tipo_produto') == 'mangueira':
                     quantidade = float(input("Quantidade a adicionar (em metros, ex: 0.2 para 20cm): "))
+                    if quantidade <= 0:
+                        print("Quantidade inválida!")
+                        return
+                    produto_existente['quantidade'] += quantidade
+                    print(f"Quantidade atualizada com sucesso! Nova quantidade: {produto_existente['quantidade']} metros")
                 else:
                     quantidade = int(input("Quantidade a adicionar: "))
+                    if quantidade <= 0:
+                        print("Quantidade inválida!")
+                        return
+                    produto_existente['quantidade'] += quantidade
+                    print(f"Quantidade atualizada com sucesso! Nova quantidade: {produto_existente['quantidade']}")
                 
-                if quantidade <= 0:
-                    print("Quantidade inválida!")
-                    return
-
-                produto_existente['quantidade'] += quantidade
-                print(f"Quantidade atualizada com sucesso! Nova quantidade: {produto_existente['quantidade']}")
                 banco.salvar_dados()
                 return
 
@@ -334,7 +334,6 @@ def adicionar_produto():
         file.seek(0)
         json.dump(logs, file, indent=4)
 
-
 # registrar saida
 
 
@@ -376,8 +375,7 @@ def registrar_saida():
         for i, produto in enumerate(resultados):
             if produto.get('tipo_produto') == 'mangueira':
                 print(f"{i + 1} - Nome: {produto['nome']}, Modelo: {produto['modelo']}, "
-                      f"Quantidade disponível: {produto['quantidade']} metros, "
-                      f"Valor por metro: R$ {produto['valor']:.2f}")
+                      f"Quantidade disponível: {produto['quantidade']} metros")
             else:
                 part_number = f", PN: {produto.get('partNumber', 'N/A')}" if 'partNumber' in produto else ""
                 print(f"{i + 1} - Nome: {produto['nome']}, Modelo: {produto['modelo']}"
@@ -392,22 +390,34 @@ def registrar_saida():
             print("Seleção inválida!")
             return
 
+        # Variável para armazenar o valor total (usado tanto para mangueiras quanto para outros produtos)
+        valor_total = 0
+        
         try:
             if produto_selecionado.get('tipo_produto') == 'mangueira':
                 print(f"\nQuantidade disponível: {produto_selecionado['quantidade']} metros")
                 quantidade = float(input("Quantidade para saída (em metros, ex: 0.2 para 20cm): "))
+                if quantidade <= 0:
+                    print("Quantidade deve ser maior que zero!")
+                    return
+                if quantidade > produto_selecionado['quantidade']:
+                    print("Quantidade insuficiente em estoque!")
+                    return
+                # Calcular valor total para mangueira
                 valor_total = quantidade * produto_selecionado['valor']
                 print(f"\nValor calculado: R$ {valor_total:.2f} "
                       f"({quantidade:.1f}m x R$ {produto_selecionado['valor']:.2f}/m)")
             else:
+                print(f"\nQuantidade disponível: {produto_selecionado['quantidade']}")
                 quantidade = int(input("Quantidade para saída: "))
-            
-            if quantidade > produto_selecionado['quantidade']:
-                print("Quantidade insuficiente em estoque!")
-                return
-            if quantidade <= 0:
-                print("Quantidade deve ser maior que zero!")
-                return
+                if quantidade <= 0:
+                    print("Quantidade deve ser maior que zero!")
+                    return
+                if quantidade > produto_selecionado['quantidade']:
+                    print("Quantidade insuficiente em estoque!")
+                    return
+                # Calcular valor total para produtos normais
+                valor_total = quantidade * produto_selecionado['valor']
         except ValueError:
             print("Quantidade inválida!")
             return
@@ -430,6 +440,7 @@ def registrar_saida():
             'condicao': produto_selecionado.get('condicao', 'N/A'),
             'quantidade': quantidade,
             'valor': produto_selecionado.get('valor', 0),
+            'valor_total': valor_total,  # Adiciona valor total para todos os produtos
             'origem': produto_selecionado.get('origem', 'N/A'),
             'partNumber': produto_selecionado.get('partNumber', 'N/A'),
             'observacoes': 'N/A'
@@ -437,8 +448,7 @@ def registrar_saida():
 
         if produto_selecionado.get('tipo_produto') == 'mangueira':
             saida.update({
-                'tipo_produto': 'mangueira',
-                'valor_total': valor_total
+                'tipo_produto': 'mangueira'
             })
 
         if produto_selecionado['classificacao'] == "AERO":
@@ -555,19 +565,21 @@ def registrar_saida():
             print(f"Produto removido do estoque.")
 
         banco.salvar_dados()
+        
+        # Mensagem final uniforme com exibição de valor total
         if produto_selecionado.get('tipo_produto') == 'mangueira':
             print(f"\nSaída registrada com sucesso!")
             print(f"Quantidade retirada: {quantidade:.1f}m")
             print(f"Valor total: R$ {valor_total:.2f}")
         else:
-            print("Saída registrada com sucesso!")
+            print(f"\nSaída registrada com sucesso!")
+            print(f"Quantidade retirada: {quantidade}")
+            print(f"Valor total: R$ {valor_total:.2f}")
 
     except Exception as e:
         logging.error(f"Erro ao registrar saída: {str(e)}")
         print(f"Erro ao registrar saída: {str(e)}")
         return None
-
-
 # Função para registrar o descarte de um produto
 
 
