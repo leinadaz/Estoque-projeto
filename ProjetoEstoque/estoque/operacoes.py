@@ -175,7 +175,7 @@ def adicionar_produto():
     # Antecipando a pergunta sobre mangueira
     is_mangueira = False
     if classificacao == "CONS":
-        tipo = input("É mangueira? (S/N): ").lower()
+        tipo = input("É mangueira? (S/N): \n").lower()
         if tipo == 'cancelar':
             return
         is_mangueira = (tipo == 's')
@@ -242,7 +242,7 @@ def adicionar_produto():
 
                 # Perguntar sobre frete
                 foi_fretado = input(
-                    "\nEste produto foi enviado com frete? (S/N): ").lower()
+                    "\nEste produto foi enviado com frete? (S/N): \n").lower()
                 if foi_fretado == 'cancelar':
                     return
 
@@ -437,7 +437,7 @@ def registrar_saida():
         if opcao_busca.lower() == "cancelar":
             return
 
-        termo_busca = input("Digite o termo de busca: ")
+        termo_busca = input("\nDigite o termo de busca: ")
         if termo_busca.lower() == "cancelar":
             return
 
@@ -1298,6 +1298,7 @@ def configurar_log():
         )
 
 
+
 def gerar_relatorio_saidas(data_inicial: str, data_final: str) -> str:
     """
     Gera relatório de saídas do estoque com tratamento de erros e validações
@@ -1426,12 +1427,11 @@ def gerar_relatorio_saidas(data_inicial: str, data_final: str) -> str:
             print("Nenhum dado encontrado para o período especificado")
             return None
 
-
-        # Correção - Usar o campo de frete proporcional por unidade
-        """df_periodo['Valor Total'] = df_periodo['Quantidade'] * (
+        # Cálculo do Valor Total - CORRIGIDO
+        df_periodo['Valor Total'] = df_periodo['Quantidade'] * (
             df_periodo['Valor Unit.'] + df_periodo['Frete_propo'])
         df_periodo['Valor Total'] = df_periodo['Valor Total'].fillna(
-            0).astype(float)"""
+            0).astype(float)
 
         df_periodo = df_periodo.sort_values('Data')
 
@@ -1642,7 +1642,7 @@ def gerar_relatorio_saidas(data_inicial: str, data_final: str) -> str:
                         'Data', 'Nome', 'Modelo', 'Part Number', 'Serial Number',
                         'Classificação', 'Condição', 'Origem', 'Ajudante EPI', 'Placa',
                         'Observações',
-                        'Quantidade', 'Valor Unit.', 'Frete Prop.', 'Valor Total'
+                        'Quantidade', 'Valor Unit.', 'Frete_propo', 'Valor Total'
                     ]
 
                     for idx, col in enumerate(colunas_ordenadas):
@@ -1673,7 +1673,7 @@ def gerar_relatorio_saidas(data_inicial: str, data_final: str) -> str:
                         sheet.write(row, 12, float(
                             item['Valor Unit.']), formato_money)
                         sheet.write(row, 13, float(
-                            item['Frete Prop.']), formato_money)
+                            item['Frete_propo']), formato_money)
                         sheet.write(row, 14, float(
                             item['Valor Total']), formato_money)
 
@@ -1717,7 +1717,7 @@ def gerar_relatorio_saidas(data_inicial: str, data_final: str) -> str:
                 colunas_consumo = [
                     'Data', 'Nome', 'Modelo', 'Classificação',
                     'Condição', 'Origem', 'Quantidade', 'Valor Unit.',
-                    'Frete Prop.', 'Valor Total'
+                    'Frete_propo', 'Valor Total'
                 ]
 
                 for idx, col in enumerate(colunas_consumo):
@@ -1756,124 +1756,124 @@ def gerar_relatorio_saidas(data_inicial: str, data_final: str) -> str:
                     df_consumo['Valor Total'].sum()), formatos['total'])
 
             # Criar aba única de saidas com todas as classificações
-                sheet_compras = workbook.add_worksheet('Saídas')
+            sheet_compras = workbook.add_worksheet('Saídas')
 
-                larguras_compras = {
-                    'A:A': 25,  # Nome
-                    'B:B': 20,  # Modelo
-                    'C:C': 20,  # Part Number
-                    'D:D': 15,  # Classificação
-                    'E:E': 15,  # Quantidade Total
-                    'F:F': 15,  # Valor Unit.
-                    'G:G': 15,  # Frete Proporcional
-                    'H:H': 20,  # Valor Total
-                    'I:I': 25,  # Origem
-                }
+            larguras_compras = {
+                'A:A': 25,  # Nome
+                'B:B': 20,  # Modelo
+                'C:C': 20,  # Part Number
+                'D:D': 15,  # Classificação
+                'E:E': 15,  # Quantidade Total
+                'F:F': 15,  # Valor Unit.
+                'G:G': 15,  # Frete Proporcional
+                'H:H': 20,  # Valor Total
+                'I:I': 25,  # Origem
+            }
 
-                for col, width in larguras_compras.items():
-                    sheet_compras.set_column(col, width)
+            for col, width in larguras_compras.items():
+                sheet_compras.set_column(col, width)
 
-                sheet_compras.merge_range(
-                    'A1:I1',
-                    f'SAÍDAS POR CLASSIFICAÇÃO DO PERÍODO - {data_inicial} a {data_final}',
-                    formatos['header']
-                )
+            sheet_compras.merge_range(
+                'A1:I1',
+                f'SAÍDAS POR CLASSIFICAÇÃO DO PERÍODO - {data_inicial} a {data_final}',
+                formatos['header']
+            )
 
-                headers_compras = ['Nome', 'Modelo', 'Part Number', 'Classificação',
-                                'Quantidade Total', 'Valor Unit.', 'Frete Prop.', 'Valor Total',
-                                'Origem']
+            headers_compras = ['Nome', 'Modelo', 'Part Number', 'Classificação',
+                            'Quantidade Total', 'Valor Unit.', 'Frete Prop.', 'Valor Total',
+                            'Origem']
 
-                for idx, header in enumerate(headers_compras):
-                    sheet_compras.write(2, idx, header, formatos['header'])
+            for idx, header in enumerate(headers_compras):
+                sheet_compras.write(2, idx, header, formatos['header'])
 
-                row = 3
-                valor_total_geral = 0
-                totais_por_classificacao = {}
+            row = 3
+            valor_total_geral = 0
+            totais_por_classificacao = {}
 
-                classificacoes_ordem = ['AERO', 'AUTO', 'EPI', 'CONS']
-                classificacoes_existentes = [
-                    c for c in classificacoes_ordem if c in df_periodo['Classificação'].unique()]
+            classificacoes_ordem = ['AERO', 'AUTO', 'EPI', 'CONS']
+            classificacoes_existentes = [
+                c for c in classificacoes_ordem if c in df_periodo['Classificação'].unique()]
 
-                row += 1
+            row += 1
 
-                for classificacao in classificacoes_existentes:
-                    df_class = df_periodo[df_periodo['Classificação'] == classificacao].copy()
+            for classificacao in classificacoes_existentes:
+                df_class = df_periodo[df_periodo['Classificação'] == classificacao].copy()
 
-                    sheet_compras.merge_range(
-                        f'A{row}:I{row}', 
-                        f'Classificação: {classificacao}', 
-                        formatos['subheader']
-                    )
-                    row += 1
-
-                    # Incluindo Frete_propo no agrupamento
-                    df_itens = df_class.groupby(['Nome', 'Modelo', 'Part Number', 'Valor Unit.', 'Origem', 'Frete_propo']).agg({
-                        'Quantidade': 'sum'
-                    }).reset_index()
-
-                    # Corrigindo o cálculo do valor total para incluir o frete proporcional
-                    df_itens['Valor Total'] = df_itens['Quantidade'] * (df_itens['Valor Unit.'] + df_itens['Frete_propo'])
-                    df_itens = df_itens.sort_values(['Origem', 'Nome'])
-
-                    linha_alternada = True
-                    for _, item in df_itens.iterrows():
-                        formato = formatos['data_clara'] if linha_alternada else formatos['data_escura']
-                        formato_number = formatos['number_clara'] if linha_alternada else formatos['number_escura']
-                        formato_money = formatos['money_clara'] if linha_alternada else formatos['money_escura']
-
-                        sheet_compras.write(row, 0, str(item['Nome']), formato)
-                        sheet_compras.write(row, 1, str(item['Modelo']), formato)
-                        sheet_compras.write(row, 2, str(item['Part Number']), formato)
-                        sheet_compras.write(row, 3, classificacao, formato)
-                        sheet_compras.write(row, 4, float(item['Quantidade']), formato_number)
-                        sheet_compras.write(row, 5, float(item['Valor Unit.']), formato_money)
-                        sheet_compras.write(row, 6, float(item['Frete_propo']), formato_money)  # Nova coluna
-                        sheet_compras.write(row, 7, float(item['Valor Total']), formato_money)
-                        sheet_compras.write(row, 8, str(item['Origem']), formato)
-
-                        row += 1
-                        linha_alternada = not linha_alternada
-
-                    total_classificacao = df_itens['Valor Total'].sum()
-                    totais_por_classificacao[classificacao] = total_classificacao
-                    
-                    # Mantendo o layout original do total por classificação, mas ajustando os índices
-                    sheet_compras.merge_range(
-                        f'A{row + 1}:G{row + 1}', 
-                        f'Total {classificacao}', 
-                        formatos['total']
-                    )
-                    sheet_compras.write(row, 7, float(total_classificacao), formatos['total'])
-                    sheet_compras.write(row, 8, '', formatos['total'])
-                    row += 1
-
-                    row += 1
-
-                    valor_total_geral += total_classificacao
-
-                row += 1
-
-                # Mantendo o layout do total geral estimado conforme seu código original
-                sheet_compras.merge_range(
-                    f'A{row}:F{row}', 
-                    'TOTAL GERAL ESTIMADO:', 
-                    formatos['total_geral']
-                )
-                sheet_compras.merge_range(
-                    f'G{row}:H{row}', 
-                    valor_total_geral, 
-                    formatos['total_geral']
-                )
-                sheet_compras.write(row, 8, '', formatos['total_geral'])
-
-                row += 1
-
-                # Observação final com ajuste para o novo número de colunas
                 sheet_compras.merge_range(
                     f'A{row}:I{row}', 
-                    '* Valores podem variar conforme fornecedor e data da compra', 
-                    formatos['data_clara']
+                    f'Classificação: {classificacao}', 
+                    formatos['subheader']
                 )
+                row += 1
+
+                # Incluindo Frete_propo no agrupamento
+                df_itens = df_class.groupby(['Nome', 'Modelo', 'Part Number', 'Valor Unit.', 'Origem', 'Frete_propo']).agg({
+                    'Quantidade': 'sum'
+                }).reset_index()
+
+                # Corrigindo o cálculo do valor total para incluir o frete proporcional
+                df_itens['Valor Total'] = df_itens['Quantidade'] * (df_itens['Valor Unit.'] + df_itens['Frete_propo'])
+                df_itens = df_itens.sort_values(['Origem', 'Nome'])
+
+                linha_alternada = True
+                for _, item in df_itens.iterrows():
+                    formato = formatos['data_clara'] if linha_alternada else formatos['data_escura']
+                    formato_number = formatos['number_clara'] if linha_alternada else formatos['number_escura']
+                    formato_money = formatos['money_clara'] if linha_alternada else formatos['money_escura']
+
+                    sheet_compras.write(row, 0, str(item['Nome']), formato)
+                    sheet_compras.write(row, 1, str(item['Modelo']), formato)
+                    sheet_compras.write(row, 2, str(item['Part Number']), formato)
+                    sheet_compras.write(row, 3, classificacao, formato)
+                    sheet_compras.write(row, 4, float(item['Quantidade']), formato_number)
+                    sheet_compras.write(row, 5, float(item['Valor Unit.']), formato_money)
+                    sheet_compras.write(row, 6, float(item['Frete_propo']), formato_money)  # Nova coluna
+                    sheet_compras.write(row, 7, float(item['Valor Total']), formato_money)
+                    sheet_compras.write(row, 8, str(item['Origem']), formato)
+
+                    row += 1
+                    linha_alternada = not linha_alternada
+
+                total_classificacao = df_itens['Valor Total'].sum()
+                totais_por_classificacao[classificacao] = total_classificacao
+                
+                # Mantendo o layout original do total por classificação, mas ajustando os índices
+                sheet_compras.merge_range(
+                    f'A{row + 1}:G{row + 1}', 
+                    f'Total {classificacao}', 
+                    formatos['total']
+                )
+                sheet_compras.write(row, 7, float(total_classificacao), formatos['total'])
+                sheet_compras.write(row, 8, '', formatos['total'])
+                row += 1
+
+                row += 1
+
+                valor_total_geral += total_classificacao
+
+            row += 1
+
+            # Mantendo o layout do total geral estimado conforme seu código original
+            sheet_compras.merge_range(
+                f'A{row}:F{row}', 
+                'TOTAL GERAL ESTIMADO:', 
+                formatos['total_geral']
+            )
+            sheet_compras.merge_range(
+                f'G{row}:H{row}', 
+                valor_total_geral, 
+                formatos['total_geral']
+            )
+            sheet_compras.write(row, 8, '', formatos['total_geral'])
+
+            row += 1
+
+            # Observação final com ajuste para o novo número de colunas
+            sheet_compras.merge_range(
+                f'A{row}:I{row}', 
+                '* Valores podem variar conforme fornecedor e data da compra', 
+                formatos['data_clara']
+            )
             writer.close()
             logging.info(f"Relatório gerado com sucesso: {caminho_completo}")
             print(f"\nRelatório gerado com sucesso!")
@@ -1889,6 +1889,7 @@ def gerar_relatorio_saidas(data_inicial: str, data_final: str) -> str:
         logging.error(f"Erro inesperado: {str(e)}")
         print(f"Erro inesperado: {str(e)}")
         return None
+
 
 
 def executar_relatorio():
